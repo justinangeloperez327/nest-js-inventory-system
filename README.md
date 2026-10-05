@@ -409,6 +409,175 @@ outOfStockLines
 
 `GET /api/v1/inventory/form-options` returns active warehouses for Angular inventory filtering.
 
+## Stock movement ledger
+
+Stock movements are the immutable audit trail behind inventory balances.
+
+The Angular-facing ledger is read-only:
+
+```text
+GET /api/v1/stock-movements
+GET /api/v1/stock-movements/form-options
+GET /api/v1/stock-movements/:id
+```
+
+All three endpoints require `inventory.view`.
+
+There are deliberately no public create, update, or delete endpoints for stock movements. New movements are created only by authorized business operations through the exported `StockMovementsService.applyMovement()` transaction boundary.
+
+### Movement types
+
+```text
+receipt
+sale
+transfer-in
+transfer-out
+adjustment-in
+adjustment-out
+return-in
+return-out
+stock-count
+```
+
+`quantityChange` is signed:
+
+- positive values increase on-hand stock
+- negative values decrease on-hand stock
+- zero is allowed for an auditable event
+- movement direction must match its type, except `stock-count`, which may be positive, negative, or zero
+
+### Atomic stock mutation
+
+Every movement is applied in one database transaction:
+
+```text
+validate command
+      ↓
+ensure product + warehouse balance row
+      ↓
+lock balance row FOR UPDATE
+      ↓
+read inventory.allowNegativeStock
+      ↓
+validate resulting available stock
+      ↓
+update on-hand quantity / weighted average cost
+      ↓
+insert immutable stock movement
+      ↓
+commit
+```
+
+When negative stock is disabled, an outbound movement is rejected if:
+
+```text
+newOnHand - quantityReserved < 0
+```
+
+with:
+
+```text
+INSUFFICIENT_AVAILABLE_STOCK
+```
+
+This means reserved quantity is protected and cannot be consumed by an unrelated outbound movement.
+
+For positive movements with a supplied `unitCost`, the inventory row recalculates weighted average cost transactionally.
+
+### Ledger fields
+
+Movement rows store:
+
+```text
+productId
+warehouseId
+type
+quantityChange
+unitCost
+balanceBefore
+balanceAfter
+referenceType
+referenceId
+referenceNumber
+referencePath
+notes
+occurredAt
+performedByUserId
+createdAt
+```
+
+`balanceBefore` and `balanceAfter` represent on-hand quantity.
+
+Source references are optional, but when present they contain type, id, and display number. `referencePath` is optional and must be a safe local path beginning with exactly one `/`.
+
+### Movement queries
+
+The list endpoint supports:
+
+```text
+page
+pageSize
+search
+sort
+direction
+productId
+warehouseId
+type
+dateFrom
+dateTo
+reference
+```
+
+Search matches product SKU/name and warehouse code/name.
+
+Supported sorts:
+
+```text
+occurredAt
+productName
+sku
+warehouseName
+type
+quantityChange
+balanceAfter
+```
+
+The default sort is `occurredAt desc`.
+
+The response matches the Angular stock movement model:
+
+```json
+{
+  "id": "...",
+  "productId": "...",
+  "sku": "SKU-001",
+  "productName": "Product",
+  "unitSymbol": "pc",
+  "warehouseId": "...",
+  "warehouseCode": "WH-001",
+  "warehouseName": "Main Warehouse",
+  "type": "receipt",
+  "quantityChange": 10,
+  "balanceAfter": 25,
+  "reference": {
+    "type": "purchase-receipt",
+    "id": "...",
+    "number": "GRN-001"
+  },
+  "occurredAt": "...",
+  "performedBy": {
+    "id": "...",
+    "name": "System Administrator"
+  }
+}
+```
+
+### Immutability
+
+PostgreSQL rejects `UPDATE` and `DELETE` against `stock_movements` through a database trigger. Product, warehouse, and actor foreign keys are restricted so historical attribution cannot be silently rewritten through cascades.
+
+Corrections must be represented by a new compensating movement.
+
 ## Users and access control
 
 User, role, and permission administration is protected by `user.manage`.

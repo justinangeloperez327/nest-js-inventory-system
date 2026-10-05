@@ -12,6 +12,7 @@ import { AuthModule } from './modules/auth/auth.module.js';
 import { CategoriesModule } from './modules/categories/categories.module.js';
 import { InventoryModule } from './modules/inventory/inventory.module.js';
 import { ProductsModule } from './modules/products/products.module.js';
+import { StockMovementsModule } from './modules/stock-movements/stock-movements.module.js';
 import { UnitsModule } from './modules/units/units.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { WarehousesModule } from './modules/warehouses/warehouses.module.js';
@@ -37,6 +38,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module.js';
     ProductsModule,
     WarehousesModule,
     InventoryModule,
+    StockMovementsModule,
     HealthModule,
   ],
 })
