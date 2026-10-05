@@ -1,5 +1,34 @@
 const NODE_ENVIRONMENTS = new Set(['development', 'test', 'production']);
 
+function requiredSecret(
+  config: Record<string, unknown>,
+  key: string,
+): string {
+  const value = String(config[key] ?? '').trim();
+
+  if (value.length < 32) {
+    throw new Error(`${key} must be at least 32 characters long`);
+  }
+
+  return value;
+}
+
+function integerInRange(
+  config: Record<string, unknown>,
+  key: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const value = Number(config[key] ?? fallback);
+
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`${key} must be an integer between ${min} and ${max}`);
+  }
+
+  return value;
+}
+
 export function validateEnvironment(
   config: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -46,7 +75,46 @@ export function validateEnvironment(
   }
 
   if (!['postgresql:', 'postgres:'].includes(parsedDatabaseUrl.protocol)) {
-    throw new Error('DATABASE_URL must use the postgresql:// or postgres:// protocol');
+    throw new Error(
+      'DATABASE_URL must use the postgresql:// or postgres:// protocol',
+    );
+  }
+
+  const accessSecret = requiredSecret(config, 'JWT_ACCESS_SECRET');
+  const refreshSecret = requiredSecret(config, 'JWT_REFRESH_SECRET');
+
+  if (accessSecret === refreshSecret) {
+    throw new Error('JWT access and refresh secrets must be different');
+  }
+
+  const accessTtlSeconds = integerInRange(
+    config,
+    'JWT_ACCESS_TTL_SECONDS',
+    900,
+    60,
+    86400,
+  );
+  const refreshTtlSeconds = integerInRange(
+    config,
+    'JWT_REFRESH_TTL_SECONDS',
+    604800,
+    3600,
+    7776000,
+  );
+
+  const jwtIssuer = String(
+    config.JWT_ISSUER ?? 'nest-js-inventory-system',
+  ).trim();
+  const jwtAudience = String(
+    config.JWT_AUDIENCE ?? 'angular-inventory-system',
+  ).trim();
+
+  if (!jwtIssuer) {
+    throw new Error('JWT_ISSUER cannot be empty');
+  }
+
+  if (!jwtAudience) {
+    throw new Error('JWT_AUDIENCE cannot be empty');
   }
 
   return {
@@ -56,5 +124,11 @@ export function validateEnvironment(
     API_PREFIX: apiPrefix,
     CORS_ORIGINS: corsOrigins.join(','),
     DATABASE_URL: databaseUrl,
+    JWT_ACCESS_SECRET: accessSecret,
+    JWT_REFRESH_SECRET: refreshSecret,
+    JWT_ACCESS_TTL_SECONDS: accessTtlSeconds,
+    JWT_REFRESH_TTL_SECONDS: refreshTtlSeconds,
+    JWT_ISSUER: jwtIssuer,
+    JWT_AUDIENCE: jwtAudience,
   };
 }

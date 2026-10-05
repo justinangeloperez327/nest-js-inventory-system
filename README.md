@@ -19,15 +19,75 @@ npm run db:seed
 npm run start:dev
 ```
 
+Replace the example JWT secrets before using the application outside local development.
+
 The API starts at:
 
 ```text
 http://localhost:3000/api/v1
 ```
 
+## Authentication
+
+The backend uses short-lived JWT access tokens and rotating JWT refresh tokens.
+
+Default development lifetimes:
+
+- access token: 15 minutes
+- refresh token: 7 days
+
+Refresh tokens are persisted only as Argon2id hashes and are revoked when rotated or logged out.
+
+Endpoints:
+
+```text
+POST /api/v1/auth/login
+POST /api/v1/auth/refresh
+POST /api/v1/auth/logout
+GET  /api/v1/auth/me
+```
+
+Login request:
+
+```json
+{
+  "email": "user@example.com",
+  "password": "your-password"
+}
+```
+
+Login and refresh responses use the normal API envelope:
+
+```json
+{
+  "data": {
+    "accessToken": "...",
+    "refreshToken": "...",
+    "tokenType": "Bearer",
+    "expiresIn": 900,
+    "user": {
+      "id": "...",
+      "email": "user@example.com",
+      "firstName": "User",
+      "lastName": "Name",
+      "roles": [],
+      "permissions": []
+    }
+  }
+}
+```
+
+Protected requests send:
+
+```text
+Authorization: Bearer <access-token>
+```
+
+There is deliberately no public registration endpoint. User provisioning and role assignment belong to the user/authorization modules.
+
 ## API contract
 
-Successful single-resource responses use a consistent envelope:
+Successful single-resource responses use:
 
 ```json
 {
@@ -59,83 +119,22 @@ Standard list queries support:
 ?page=1&pageSize=25&search=laptop&sort=name&order=asc
 ```
 
-Feature modules extend the common list DTO with their own validated filters.
-
-Validation failures are field-addressable:
-
-```json
-{
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "The request contains invalid data.",
-    "statusCode": 400,
-    "path": "/api/v1/products",
-    "requestId": "...",
-    "timestamp": "...",
-    "fields": {
-      "name": ["name should not be empty"]
-    }
-  }
-}
-```
-
-All error responses include a stable error code, HTTP status, request ID, request path, and timestamp.
+Validation failures are field-addressable and all errors include a stable code, status, request ID, path, and timestamp.
 
 ## Health
 
-Liveness:
-
 ```text
 GET /api/v1/health
-```
-
-Response:
-
-```json
-{
-  "data": {
-    "status": "ok"
-  }
-}
-```
-
-Readiness, including PostgreSQL connectivity:
-
-```text
 GET /api/v1/health/ready
 ```
 
-Successful readiness response:
-
-```json
-{
-  "data": {
-    "status": "ok",
-    "database": "up"
-  }
-}
-```
+The readiness endpoint verifies PostgreSQL connectivity.
 
 ## Database
 
 The project uses Prisma ORM with PostgreSQL.
 
-The initial database foundation includes:
-
-- users
-- roles
-- permissions
-- user-role assignments
-- role-permission assignments
-- categories
-- units
-- products
-- warehouses
-- per-warehouse inventory balances
-- system settings
-- audit logs
-
-Inventory quantities use decimal values so the model can support both discrete items and measured units.
+The database foundation includes users, roles, permissions, refresh tokens, categories, units, products, warehouses, per-warehouse inventory balances, system settings, and audit logs.
 
 ### Database commands
 
@@ -168,6 +167,7 @@ The application includes:
 - liveness and database-readiness endpoints
 - PostgreSQL/Prisma database module
 - migration and seed infrastructure
+- JWT authentication with rotating refresh tokens
 
 ## Environment
 

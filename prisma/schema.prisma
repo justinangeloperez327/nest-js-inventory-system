@@ -8,19 +8,35 @@ datasource db {
 }
 
 model User {
-  id           String     @id @default(uuid()) @db.Uuid
-  email        String     @unique
-  passwordHash String     @map("password_hash")
-  firstName    String     @map("first_name")
-  lastName     String     @map("last_name")
-  isActive     Boolean    @default(true) @map("is_active")
-  lastLoginAt  DateTime?  @map("last_login_at") @db.Timestamptz(3)
-  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
-  roles        UserRole[]
-  auditLogs    AuditLog[]
+  id            String         @id @default(uuid()) @db.Uuid
+  email         String         @unique
+  passwordHash  String         @map("password_hash")
+  firstName     String         @map("first_name")
+  lastName      String         @map("last_name")
+  isActive      Boolean        @default(true) @map("is_active")
+  lastLoginAt   DateTime?      @map("last_login_at") @db.Timestamptz(3)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  roles         UserRole[]
+  auditLogs     AuditLog[]
+  refreshTokens RefreshToken[]
 
   @@map("users")
+}
+
+model RefreshToken {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  tokenHash         String    @map("token_hash")
+  expiresAt         DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz(3)
+  replacedByTokenId String?   @map("replaced_by_token_id") @db.Uuid
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
 }
 
 model Role {
@@ -47,11 +63,11 @@ model Permission {
 }
 
 model UserRole {
-  userId    String   @map("user_id") @db.Uuid
-  roleId    String   @map("role_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  roleId     String   @map("role_id") @db.Uuid
   assignedAt DateTime @default(now()) @map("assigned_at") @db.Timestamptz(3)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@id([userId, roleId])
   @@index([roleId])
@@ -135,16 +151,16 @@ model Warehouse {
 }
 
 model InventoryItem {
-  id                String    @id @default(uuid()) @db.Uuid
-  productId         String    @map("product_id") @db.Uuid
-  warehouseId       String    @map("warehouse_id") @db.Uuid
-  quantityOnHand    Decimal   @default(0) @map("quantity_on_hand") @db.Decimal(19, 4)
-  quantityReserved  Decimal   @default(0) @map("quantity_reserved") @db.Decimal(19, 4)
-  averageCost       Decimal   @default(0) @map("average_cost") @db.Decimal(19, 4)
-  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
-  product           Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
-  warehouse         Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  id               String    @id @default(uuid()) @db.Uuid
+  productId        String    @map("product_id") @db.Uuid
+  warehouseId      String    @map("warehouse_id") @db.Uuid
+  quantityOnHand   Decimal   @default(0) @map("quantity_on_hand") @db.Decimal(19, 4)
+  quantityReserved Decimal   @default(0) @map("quantity_reserved") @db.Decimal(19, 4)
+  averageCost      Decimal   @default(0) @map("average_cost") @db.Decimal(19, 4)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  product          Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
+  warehouse        Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
 
   @@unique([productId, warehouseId])
   @@index([warehouseId])
