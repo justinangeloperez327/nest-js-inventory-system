@@ -1,10 +1,17 @@
-import { Logger, ValidationPipe } from '@nestjs/common';
+import {
+  BadRequestException,
+  Logger,
+  ValidationPipe,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import type { ValidationError } from 'class-validator';
 
 import { AppModule } from './app.module.js';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter.js';
+import { ApiResponseInterceptor } from './common/interceptors/api-response.interceptor.js';
 import { requestContextMiddleware } from './common/middleware/request-context.middleware.js';
+import { validationErrorsToFields } from './common/utils/validation-errors.util.js';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
@@ -35,9 +42,16 @@ async function bootstrap(): Promise<void> {
       transformOptions: {
         enableImplicitConversion: true,
       },
+      exceptionFactory: (errors: ValidationError[]) =>
+        new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message: 'The request contains invalid data.',
+          fields: validationErrorsToFields(errors),
+        }),
     }),
   );
   app.useGlobalFilters(new HttpExceptionFilter());
+  app.useGlobalInterceptors(new ApiResponseInterceptor());
   app.enableShutdownHooks();
 
   await app.listen(port, host);
