@@ -25,12 +25,78 @@ The API starts at:
 http://localhost:3000/api/v1
 ```
 
+## API contract
+
+Successful single-resource responses use a consistent envelope:
+
+```json
+{
+  "data": {
+    "id": "..."
+  }
+}
+```
+
+Paginated collections use:
+
+```json
+{
+  "data": [],
+  "meta": {
+    "page": 1,
+    "pageSize": 25,
+    "total": 0,
+    "totalPages": 0
+  }
+}
+```
+
+The default page size is `25` and the maximum accepted page size is `100`.
+
+Standard list queries support:
+
+```text
+?page=1&pageSize=25&search=laptop&sort=name&order=asc
+```
+
+Feature modules extend the common list DTO with their own validated filters.
+
+Validation failures are field-addressable:
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "The request contains invalid data.",
+    "statusCode": 400,
+    "path": "/api/v1/products",
+    "requestId": "...",
+    "timestamp": "...",
+    "fields": {
+      "name": ["name should not be empty"]
+    }
+  }
+}
+```
+
+All error responses include a stable error code, HTTP status, request ID, request path, and timestamp.
+
 ## Health
 
 Liveness:
 
 ```text
 GET /api/v1/health
+```
+
+Response:
+
+```json
+{
+  "data": {
+    "status": "ok"
+  }
+}
 ```
 
 Readiness, including PostgreSQL connectivity:
@@ -43,8 +109,10 @@ Successful readiness response:
 
 ```json
 {
-  "status": "ok",
-  "database": "up"
+  "data": {
+    "status": "ok",
+    "database": "up"
+  }
 }
 ```
 
@@ -91,8 +159,9 @@ The application includes:
 - environment-aware configuration
 - `/api/v1` global API prefix
 - Angular development CORS configuration
-- global validation with DTO whitelisting
-- global HTTP exception handling
+- global DTO validation and transformation
+- standardized success and error responses
+- reusable pagination/list query DTOs and pagination helpers
 - request IDs via `X-Request-Id`
 - structured HTTP request logging
 - graceful shutdown hooks
