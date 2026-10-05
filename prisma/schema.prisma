@@ -23,6 +23,8 @@ model User {
   stockMovements              StockMovement[]
   createdInventoryAdjustments InventoryAdjustment[] @relation("InventoryAdjustmentCreatedBy")
   postedInventoryAdjustments  InventoryAdjustment[] @relation("InventoryAdjustmentPostedBy")
+  createdInventoryTransfers   InventoryTransfer[]   @relation("InventoryTransferCreatedBy")
+  postedInventoryTransfers    InventoryTransfer[]   @relation("InventoryTransferPostedBy")
 
   @@map("users")
 }
@@ -136,6 +138,7 @@ model Product {
   inventory            InventoryItem[]
   stockMovements       StockMovement[]
   inventoryAdjustments InventoryAdjustment[]
+  inventoryTransferLines InventoryTransferLine[]
 
   @@index([categoryId])
   @@index([unitId])
@@ -155,6 +158,8 @@ model Warehouse {
   inventory            InventoryItem[]
   stockMovements       StockMovement[]
   inventoryAdjustments InventoryAdjustment[]
+  outboundTransfers     InventoryTransfer[] @relation("InventoryTransferSource")
+  inboundTransfers      InventoryTransfer[] @relation("InventoryTransferDestination")
 
   @@index([name])
   @@map("warehouses")
@@ -240,6 +245,8 @@ model StockMovement {
   warehouse         Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
   performedBy         User?                 @relation(fields: [performedByUserId], references: [id], onDelete: Restrict)
   inventoryAdjustment InventoryAdjustment?
+  outboundTransferLine InventoryTransferLine? @relation("InventoryTransferOutboundMovement")
+  inboundTransferLine  InventoryTransferLine? @relation("InventoryTransferInboundMovement")
 
   @@index([productId, occurredAt])
   @@index([warehouseId, occurredAt])
@@ -294,4 +301,59 @@ model InventoryAdjustment {
   @@index([createdByUserId])
   @@index([postedByUserId])
   @@map("inventory_adjustments")
+}
+
+
+enum InventoryTransferStatus {
+  DRAFT
+  POSTED
+  CANCELLED
+}
+
+model InventoryTransfer {
+  id                     String                  @id @default(uuid()) @db.Uuid
+  number                 String                  @unique
+  sourceWarehouseId      String                  @map("source_warehouse_id") @db.Uuid
+  destinationWarehouseId String                  @map("destination_warehouse_id") @db.Uuid
+  notes                  String?
+  status                 InventoryTransferStatus @default(DRAFT)
+  createdByUserId        String                  @map("created_by_user_id") @db.Uuid
+  postedByUserId         String?                 @map("posted_by_user_id") @db.Uuid
+  postedAt               DateTime?               @map("posted_at") @db.Timestamptz(3)
+  createdAt              DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+  sourceWarehouse        Warehouse               @relation("InventoryTransferSource", fields: [sourceWarehouseId], references: [id], onDelete: Restrict)
+  destinationWarehouse   Warehouse               @relation("InventoryTransferDestination", fields: [destinationWarehouseId], references: [id], onDelete: Restrict)
+  createdBy              User                    @relation("InventoryTransferCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  postedBy               User?                   @relation("InventoryTransferPostedBy", fields: [postedByUserId], references: [id], onDelete: Restrict)
+  lines                  InventoryTransferLine[]
+
+  @@index([sourceWarehouseId, createdAt])
+  @@index([destinationWarehouseId, createdAt])
+  @@index([status, createdAt])
+  @@index([createdByUserId])
+  @@index([postedByUserId])
+  @@map("inventory_transfers")
+}
+
+model InventoryTransferLine {
+  id                       String            @id @default(uuid()) @db.Uuid
+  transferId               String            @map("transfer_id") @db.Uuid
+  productId                String            @map("product_id") @db.Uuid
+  quantity                 Decimal           @db.Decimal(19, 4)
+  sourceBalanceBefore      Decimal?          @map("source_balance_before") @db.Decimal(19, 4)
+  sourceBalanceAfter       Decimal?          @map("source_balance_after") @db.Decimal(19, 4)
+  destinationBalanceBefore Decimal?          @map("destination_balance_before") @db.Decimal(19, 4)
+  destinationBalanceAfter  Decimal?          @map("destination_balance_after") @db.Decimal(19, 4)
+  outboundMovementId       String?           @unique @map("outbound_movement_id") @db.Uuid
+  inboundMovementId        String?           @unique @map("inbound_movement_id") @db.Uuid
+  createdAt                DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  transfer                 InventoryTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  product                  Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  outboundMovement         StockMovement?    @relation("InventoryTransferOutboundMovement", fields: [outboundMovementId], references: [id], onDelete: Restrict)
+  inboundMovement          StockMovement?    @relation("InventoryTransferInboundMovement", fields: [inboundMovementId], references: [id], onDelete: Restrict)
+
+  @@unique([transferId, productId])
+  @@index([productId])
+  @@map("inventory_transfer_lines")
 }

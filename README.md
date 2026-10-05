@@ -715,6 +715,140 @@ The current public API does not expose a cancel command yet; `cancelled` is rese
 
 Default Angular sorting is `createdAt desc`.
 
+## Inventory transfers
+
+Inventory transfers move stock between two warehouses as one atomic business transaction.
+
+Endpoints:
+
+```text
+GET  /api/v1/inventory-transfers
+GET  /api/v1/inventory-transfers/form-options
+GET  /api/v1/inventory-transfers/product-options?sourceWarehouseId=...&search=...
+GET  /api/v1/inventory-transfers/:id
+POST /api/v1/inventory-transfers
+PUT  /api/v1/inventory-transfers/:id
+POST /api/v1/inventory-transfers/:id/post
+```
+
+List, detail, and form-options require `inventory.view`. Product lookup, create, update, and post require `inventory.transfer`.
+
+### Draft structure
+
+A transfer contains:
+
+```text
+sourceWarehouseId
+destinationWarehouseId
+notes
+lines[]
+  productId
+  quantity
+```
+
+Rules:
+
+- source and destination must be different active warehouses
+- at least one line is required
+- a transfer supports at most 200 lines
+- each product can appear only once
+- quantities must be positive with up to four decimal places
+- products must be active and trackable
+- each selected product must have an inventory balance in the source warehouse
+
+Product lookup is server-backed, scoped to the selected source warehouse, searches SKU/name/barcode, and returns the current `quantityAvailable` for operator context.
+
+### Posting
+
+Displayed product availability is advisory. Posting re-reads inventory under database locks.
+
+```text
+lock transfer FOR UPDATE
+        ↓
+revalidate draft + warehouses + products + quantities
+        ↓
+acquire deterministic advisory locks for all product/warehouse pairs
+        ↓
+lock source and destination balances
+        ↓
+verify source available quantity for every line
+        ↓
+for each line:
+  transfer-out at source
+  transfer-in at destination
+        ↓
+store both movement IDs and before/after balances
+        ↓
+mark transfer posted
+        ↓
+commit
+```
+
+Every transfer line creates exactly two immutable stock movements referencing the same transfer:
+
+```text
+transfer-out
+transfer-in
+```
+
+The inbound movement carries the source warehouse's current average cost so destination weighted-average valuation remains consistent.
+
+Transfers enforce sufficient source available stock even when the general `inventory.allowNegativeStock` setting is enabled. Moving stock that is not available at the source is not a valid warehouse transfer.
+
+If any line fails, the entire transaction rolls back.
+
+### Posted detail audit
+
+Each posted line can expose:
+
+```text
+sourceBalanceBefore
+sourceBalanceAfter
+destinationBalanceBefore
+destinationBalanceAfter
+outboundMovement.id
+inboundMovement.id
+```
+
+The transfer also preserves creator/poster attribution and timestamps.
+
+### Immutability
+
+Posted or cancelled transfers are immutable and transfers cannot be deleted.
+
+Database triggers also protect transfer headers and lines. Posting cannot change the draft route, notes, product IDs, or quantities.
+
+A correction must be represented by another authorized inventory transaction.
+
+### List queries
+
+The list endpoint supports:
+
+```text
+page
+pageSize
+search
+sort
+direction
+sourceWarehouseId
+destinationWarehouseId
+status
+dateFrom
+dateTo
+```
+
+Search covers transfer number, source/destination warehouse code/name, and product SKU/name.
+
+Status values:
+
+```text
+draft
+posted
+cancelled
+```
+
+The public API does not expose a cancellation command yet; `cancelled` remains reserved for a future controlled workflow.
+
 ## Users and access control
 
 User, role, and permission administration is protected by `user.manage`.
