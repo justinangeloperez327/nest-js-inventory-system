@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { ApiException } from '../../common/exceptions/api.exception.js';
 import { toPaginatedResult } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
+import type { Prisma } from '../../generated/prisma/client.js';
 import { StockMovementQueryDto } from './dto/stock-movement-query.dto.js';
 import {
   type ApplyStockMovementInput,
@@ -345,6 +346,15 @@ export class StockMovementsService {
   }
 
   async applyMovement(input: ApplyStockMovementInput) {
+    return this.prisma.$transaction((tx) =>
+      this.applyMovementInTransaction(tx, input),
+    );
+  }
+
+  async applyMovementInTransaction(
+    tx: Prisma.TransactionClient,
+    input: ApplyStockMovementInput,
+  ) {
     this.validateCommand(input);
 
     const quantityChange = this.decimalArgument(
@@ -357,176 +367,177 @@ export class StockMovementsService {
     const occurredAt = input.occurredAt ?? new Date();
     const dbType = STOCK_MOVEMENT_DB_TYPE[input.type];
 
-    return this.prisma.$transaction(async (tx) => {
-      const contextRows =
-        await tx.$queryRawUnsafe<MovementContextRow[]>(
-          CONTEXT_QUERY,
-          input.productId,
-          input.warehouseId,
-        );
-
-      const context = contextRows[0];
-
-      if (!context) {
-        await this.assertMovementEntities(
-          input.productId,
-          input.warehouseId,
-        );
-        throw new BadRequestException({
-          code: 'INVALID_STOCK_MOVEMENT_CONTEXT',
-          message:
-            'The product or warehouse is unavailable for this stock movement',
-        });
-      }
-
-      let actorName: string | undefined;
-
-      if (input.performedByUserId) {
-        const actorRows =
-          await tx.$queryRawUnsafe<ActorRow[]>(
-            [
-              'SELECT TRIM("first_name" || \' \' || "last_name") AS "name"',
-              'FROM "users"',
-              'WHERE "id" = $1::uuid',
-              'LIMIT 1',
-            ].join('\n'),
-            input.performedByUserId,
-          );
-
-        actorName = actorRows[0]?.name;
-
-        if (!actorName) {
-          throw new BadRequestException({
-            code: 'INVALID_MOVEMENT_ACTOR',
-            message:
-              'The stock movement actor does not exist',
-          });
-        }
-      }
-
-      await tx.$executeRawUnsafe(
-        ENSURE_BALANCE_QUERY,
-        randomUUID(),
+    const contextRows =
+      await tx.$queryRawUnsafe<MovementContextRow[]>(
+        CONTEXT_QUERY,
         input.productId,
         input.warehouseId,
       );
 
-      const lockedRows =
-        await tx.$queryRawUnsafe<InventoryLockRow[]>(
-          LOCK_BALANCE_QUERY,
-          input.productId,
-          input.warehouseId,
-        );
+    const context = contextRows[0];
 
-      const locked = lockedRows[0];
-
-      if (!locked) {
-        throw new ConflictException({
-          code: 'INVENTORY_BALANCE_UNAVAILABLE',
-          message:
-            'Inventory balance could not be locked for update',
-        });
-      }
-
-      const setting =
-        await tx.systemSetting.findUnique({
-          where: {
-            key: 'inventory.allowNegativeStock',
-          },
-          select: { value: true },
-        });
-      const allowNegativeStock =
-        setting?.value === true;
-
-      const updatedRows =
-        await tx.$queryRawUnsafe<UpdatedInventoryRow[]>(
-          UPDATE_BALANCE_QUERY,
-          input.productId,
-          input.warehouseId,
-          quantityChange,
-          unitCost,
-          allowNegativeStock,
-        );
-
-      const updated = updatedRows[0];
-
-      if (!updated) {
-        throw new ConflictException({
-          code: 'INSUFFICIENT_AVAILABLE_STOCK',
-          message:
-            'This movement would reduce available stock below zero',
-          details: {
-            productId: input.productId,
-            warehouseId: input.warehouseId,
-          },
-        });
-      }
-
-      const movementId = randomUUID();
-
-      await tx.$executeRawUnsafe(
-        INSERT_MOVEMENT_QUERY,
-        movementId,
+    if (!context) {
+      await this.assertMovementEntities(
+        tx,
         input.productId,
         input.warehouseId,
-        dbType,
+      );
+      throw new BadRequestException({
+        code: 'INVALID_STOCK_MOVEMENT_CONTEXT',
+        message:
+          'The product or warehouse is unavailable for this stock movement',
+      });
+    }
+
+    let actorName: string | undefined;
+
+    if (input.performedByUserId) {
+      const actorRows =
+        await tx.$queryRawUnsafe<ActorRow[]>(
+          [
+            'SELECT TRIM("first_name" || \' \' || "last_name") AS "name"',
+            'FROM "users"',
+            'WHERE "id" = $1::uuid',
+            'LIMIT 1',
+          ].join('\n'),
+          input.performedByUserId,
+        );
+
+      actorName = actorRows[0]?.name;
+
+      if (!actorName) {
+        throw new BadRequestException({
+          code: 'INVALID_MOVEMENT_ACTOR',
+          message:
+            'The stock movement actor does not exist',
+        });
+      }
+    }
+
+    await tx.$executeRawUnsafe(
+      ENSURE_BALANCE_QUERY,
+      randomUUID(),
+      input.productId,
+      input.warehouseId,
+    );
+
+    const lockedRows =
+      await tx.$queryRawUnsafe<InventoryLockRow[]>(
+        LOCK_BALANCE_QUERY,
+        input.productId,
+        input.warehouseId,
+      );
+
+    const locked = lockedRows[0];
+
+    if (!locked) {
+      throw new ConflictException({
+        code: 'INVENTORY_BALANCE_UNAVAILABLE',
+        message:
+          'Inventory balance could not be locked for update',
+      });
+    }
+
+    const setting =
+      await tx.systemSetting.findUnique({
+        where: {
+          key: 'inventory.allowNegativeStock',
+        },
+        select: { value: true },
+      });
+    const allowNegativeStock =
+      setting?.value === true;
+
+    const updatedRows =
+      await tx.$queryRawUnsafe<UpdatedInventoryRow[]>(
+        UPDATE_BALANCE_QUERY,
+        input.productId,
+        input.warehouseId,
         quantityChange,
         unitCost,
-        locked.quantityOnHand,
-        updated.quantityOnHand,
-        input.reference?.type ?? null,
-        input.reference?.id ?? null,
-        input.reference?.number ?? null,
-        input.reference?.referencePath ?? null,
-        input.notes?.trim() || null,
-        occurredAt,
-        input.performedByUserId ?? null,
+        allowNegativeStock,
       );
 
-      return {
-        id: movementId,
-        productId: input.productId,
-        sku: context.sku,
-        productName: context.productName,
-        ...(context.unitSymbol
-          ? { unitSymbol: context.unitSymbol }
-          : {}),
-        warehouseId: input.warehouseId,
-        warehouseCode: context.warehouseCode,
-        warehouseName: context.warehouseName,
-        type: input.type,
-        quantityChange: input.quantityChange,
-        balanceAfter: Number(updated.quantityOnHand),
-        ...(input.reference
-          ? { reference: input.reference }
-          : {}),
-        occurredAt,
-        ...(actorName
-          ? {
-              performedBy: {
-                id: input.performedByUserId,
-                name: actorName,
-              },
-            }
-          : {}),
-        ...(input.notes?.trim()
-          ? { notes: input.notes.trim() }
-          : {}),
-        createdAt: new Date(),
-      };
-    });
+    const updated = updatedRows[0];
+
+    if (!updated) {
+      throw new ConflictException({
+        code: 'INSUFFICIENT_AVAILABLE_STOCK',
+        message:
+          'This movement would reduce available stock below zero',
+        details: {
+          productId: input.productId,
+          warehouseId: input.warehouseId,
+        },
+      });
+    }
+
+    const movementId = randomUUID();
+
+    await tx.$executeRawUnsafe(
+      INSERT_MOVEMENT_QUERY,
+      movementId,
+      input.productId,
+      input.warehouseId,
+      dbType,
+      quantityChange,
+      unitCost,
+      locked.quantityOnHand,
+      updated.quantityOnHand,
+      input.reference?.type ?? null,
+      input.reference?.id ?? null,
+      input.reference?.number ?? null,
+      input.reference?.referencePath ?? null,
+      input.notes?.trim() || null,
+      occurredAt,
+      input.performedByUserId ?? null,
+    );
+
+    return {
+      id: movementId,
+      productId: input.productId,
+      sku: context.sku,
+      productName: context.productName,
+      ...(context.unitSymbol
+        ? { unitSymbol: context.unitSymbol }
+        : {}),
+      warehouseId: input.warehouseId,
+      warehouseCode: context.warehouseCode,
+      warehouseName: context.warehouseName,
+      type: input.type,
+      quantityChange: input.quantityChange,
+      balanceBefore: Number(locked.quantityOnHand),
+      balanceAfter: Number(updated.quantityOnHand),
+      ...(input.reference
+        ? { reference: input.reference }
+        : {}),
+      occurredAt,
+      ...(actorName
+        ? {
+            performedBy: {
+              id: input.performedByUserId,
+              name: actorName,
+            },
+          }
+        : {}),
+      ...(input.notes?.trim()
+        ? { notes: input.notes.trim() }
+        : {}),
+      createdAt: new Date(),
+    };
   }
 
   private async assertMovementEntities(
+    tx: Prisma.TransactionClient,
     productId: string,
     warehouseId: string,
   ): Promise<void> {
     const [product, warehouse] = await Promise.all([
-      this.prisma.product.findUnique({
+      tx.product.findUnique({
         where: { id: productId },
         select: { id: true },
       }),
-      this.prisma.warehouse.findUnique({
+      tx.warehouse.findUnique({
         where: { id: warehouseId },
         select: { id: true },
       }),

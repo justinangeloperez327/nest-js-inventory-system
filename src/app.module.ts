@@ -11,6 +11,7 @@ import { AccessControlModule } from './modules/access-control/access-control.mod
 import { AuthModule } from './modules/auth/auth.module.js';
 import { CategoriesModule } from './modules/categories/categories.module.js';
 import { InventoryModule } from './modules/inventory/inventory.module.js';
+import { InventoryAdjustmentsModule } from './modules/inventory-adjustments/inventory-adjustments.module.js';
 import { ProductsModule } from './modules/products/products.module.js';
 import { StockMovementsModule } from './modules/stock-movements/stock-movements.module.js';
 import { UnitsModule } from './modules/units/units.module.js';
@@ -39,6 +40,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module.js';
     WarehousesModule,
     InventoryModule,
     StockMovementsModule,
+    InventoryAdjustmentsModule,
     HealthModule,
   ],
 })

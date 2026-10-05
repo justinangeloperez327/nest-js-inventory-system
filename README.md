@@ -578,6 +578,143 @@ PostgreSQL rejects `UPDATE` and `DELETE` against `stock_movements` through a dat
 
 Corrections must be represented by a new compensating movement.
 
+## Inventory adjustments
+
+Inventory adjustments are controlled business transactions. They never write inventory balances directly.
+
+Endpoints:
+
+```text
+GET  /api/v1/inventory-adjustments
+GET  /api/v1/inventory-adjustments/form-options
+GET  /api/v1/inventory-adjustments/product-options?search=...
+GET  /api/v1/inventory-adjustments/:id
+POST /api/v1/inventory-adjustments
+PUT  /api/v1/inventory-adjustments/:id
+POST /api/v1/inventory-adjustments/:id/post
+```
+
+Read-only list/detail/form-options require `inventory.view`.
+
+Product lookup, create, update, and post require `inventory.adjust`.
+
+### Draft workflow
+
+Create and update save a draft. Draft fields are:
+
+```text
+productId
+warehouseId
+direction
+quantity
+reasonCode
+notes
+```
+
+Directions:
+
+```text
+increase
+decrease
+```
+
+Quantity is always entered as a positive value with up to four decimal places. The direction determines whether posting creates an `adjustment-in` or `adjustment-out` movement.
+
+The backend controls the available reason catalog. Current reason codes are:
+
+```text
+manual-correction
+data-correction
+found-stock       (increase only)
+damage            (decrease only)
+expired           (decrease only)
+shrinkage         (decrease only)
+```
+
+The form-options endpoint returns active warehouses and the reason catalog. Product search returns at most 20 active, trackable products and searches SKU, name, and barcode.
+
+### Posting
+
+Posting is separate from draft editing and is concurrency-safe.
+
+```text
+lock adjustment FOR UPDATE
+        ↓
+confirm status = draft
+        ↓
+revalidate reason
+        ↓
+revalidate active/trackable product
+        ↓
+revalidate active warehouse
+        ↓
+apply stock movement in the same transaction
+        ↓
+store movement ID + before/after balance
+        ↓
+mark adjustment posted
+        ↓
+commit
+```
+
+An increase creates:
+
+```text
+adjustment-in
+```
+
+A decrease creates:
+
+```text
+adjustment-out
+```
+
+The movement reference uses the adjustment number and local route `/adjustments/:id`.
+
+Decrease posting inherits the ledger's negative-stock protection. If available stock would become negative while `inventory.allowNegativeStock` is false, the whole posting transaction is rolled back.
+
+### Immutability
+
+Posted adjustments are immutable.
+
+PostgreSQL also protects the workflow directly:
+
+- inventory adjustments cannot be deleted
+- posted or cancelled adjustments cannot be updated
+- posting cannot alter the draft product, warehouse, direction, quantity, reason, or notes
+- adjustment identity fields remain immutable
+
+Corrections to a posted adjustment require a new adjustment, preserving the stock ledger.
+
+### List queries
+
+The list endpoint supports:
+
+```text
+page
+pageSize
+search
+sort
+direction
+warehouseId
+direction
+status
+dateFrom
+dateTo
+```
+
+Status values are:
+
+```text
+draft
+posted
+cancelled
+```
+
+The current public API does not expose a cancel command yet; `cancelled` is reserved in the persisted workflow for a future controlled cancellation command.
+
+Default Angular sorting is `createdAt desc`.
+
 ## Users and access control
 
 User, role, and permission administration is protected by `user.manage`.

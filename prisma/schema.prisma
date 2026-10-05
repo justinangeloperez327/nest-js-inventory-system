@@ -19,8 +19,10 @@ model User {
   updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
   roles         UserRole[]
   auditLogs     AuditLog[]
-  refreshTokens  RefreshToken[]
-  stockMovements StockMovement[]
+  refreshTokens               RefreshToken[]
+  stockMovements              StockMovement[]
+  createdInventoryAdjustments InventoryAdjustment[] @relation("InventoryAdjustmentCreatedBy")
+  postedInventoryAdjustments  InventoryAdjustment[] @relation("InventoryAdjustmentPostedBy")
 
   @@map("users")
 }
@@ -131,8 +133,9 @@ model Product {
   updatedAt    DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
   category     Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   unit         Unit?           @relation(fields: [unitId], references: [id], onDelete: SetNull)
-  inventory      InventoryItem[]
-  stockMovements StockMovement[]
+  inventory            InventoryItem[]
+  stockMovements       StockMovement[]
+  inventoryAdjustments InventoryAdjustment[]
 
   @@index([categoryId])
   @@index([unitId])
@@ -149,8 +152,9 @@ model Warehouse {
   isActive    Boolean         @default(true) @map("is_active")
   createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
-  inventory      InventoryItem[]
-  stockMovements StockMovement[]
+  inventory            InventoryItem[]
+  stockMovements       StockMovement[]
+  inventoryAdjustments InventoryAdjustment[]
 
   @@index([name])
   @@map("warehouses")
@@ -234,7 +238,8 @@ model StockMovement {
   createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
   product           Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
   warehouse         Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
-  performedBy       User?             @relation(fields: [performedByUserId], references: [id], onDelete: Restrict)
+  performedBy         User?                 @relation(fields: [performedByUserId], references: [id], onDelete: Restrict)
+  inventoryAdjustment InventoryAdjustment?
 
   @@index([productId, occurredAt])
   @@index([warehouseId, occurredAt])
@@ -244,4 +249,49 @@ model StockMovement {
   @@index([performedByUserId])
   @@index([occurredAt])
   @@map("stock_movements")
+}
+
+
+enum InventoryAdjustmentDirection {
+  INCREASE
+  DECREASE
+}
+
+enum InventoryAdjustmentStatus {
+  DRAFT
+  POSTED
+  CANCELLED
+}
+
+model InventoryAdjustment {
+  id              String                       @id @default(uuid()) @db.Uuid
+  number          String                       @unique
+  productId       String                       @map("product_id") @db.Uuid
+  warehouseId     String                       @map("warehouse_id") @db.Uuid
+  direction       InventoryAdjustmentDirection
+  quantity        Decimal                      @db.Decimal(19, 4)
+  reasonCode      String                       @map("reason_code")
+  notes           String?
+  status          InventoryAdjustmentStatus    @default(DRAFT)
+  balanceBefore   Decimal?                     @map("balance_before") @db.Decimal(19, 4)
+  balanceAfter    Decimal?                     @map("balance_after") @db.Decimal(19, 4)
+  movementId      String?                      @unique @map("movement_id") @db.Uuid
+  createdByUserId String                       @map("created_by_user_id") @db.Uuid
+  postedByUserId  String?                      @map("posted_by_user_id") @db.Uuid
+  postedAt        DateTime?                    @map("posted_at") @db.Timestamptz(3)
+  createdAt       DateTime                     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime                     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  product         Product                      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  warehouse       Warehouse                    @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  movement        StockMovement?               @relation(fields: [movementId], references: [id], onDelete: Restrict)
+  createdBy       User                         @relation("InventoryAdjustmentCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  postedBy        User?                        @relation("InventoryAdjustmentPostedBy", fields: [postedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([productId, createdAt])
+  @@index([warehouseId, createdAt])
+  @@index([status, createdAt])
+  @@index([direction, createdAt])
+  @@index([createdByUserId])
+  @@index([postedByUserId])
+  @@map("inventory_adjustments")
 }
