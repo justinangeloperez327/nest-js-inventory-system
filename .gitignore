@@ -3,6 +3,9 @@
 /node_modules
 /coverage
 
+# generated
+/src/generated/prisma
+
 # logs
 logs
 *.log

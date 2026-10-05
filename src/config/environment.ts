@@ -33,11 +33,28 @@ export function validateEnvironment(
     throw new Error('CORS_ORIGINS must contain at least one origin');
   }
 
+  const databaseUrl = String(config.DATABASE_URL ?? '').trim();
+  if (!databaseUrl) {
+    throw new Error('DATABASE_URL is required');
+  }
+
+  let parsedDatabaseUrl: URL;
+  try {
+    parsedDatabaseUrl = new URL(databaseUrl);
+  } catch {
+    throw new Error('DATABASE_URL must be a valid PostgreSQL connection URL');
+  }
+
+  if (!['postgresql:', 'postgres:'].includes(parsedDatabaseUrl.protocol)) {
+    throw new Error('DATABASE_URL must use the postgresql:// or postgres:// protocol');
+  }
+
   return {
     ...config,
     NODE_ENV: nodeEnv,
     PORT: port,
     API_PREFIX: apiPrefix,
     CORS_ORIGINS: corsOrigins.join(','),
+    DATABASE_URL: databaseUrl,
   };
 }
