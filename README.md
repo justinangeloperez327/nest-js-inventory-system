@@ -288,6 +288,127 @@ Master data is activated/deactivated rather than hard-deleted by the normal API.
 
 All master-data reads require `master-data.view`. Mutations require `master-data.manage`.
 
+## Inventory core
+
+Inventory is modeled per product and warehouse. Product Master does not contain a mutable global quantity.
+
+```text
+InventoryItem
+productId
+warehouseId
+quantityOnHand
+quantityReserved
+quantityAvailable = quantityOnHand - quantityReserved
+averageCost
+```
+
+Group 9 intentionally exposes inventory as read-only. There are no ordinary POST, PUT, PATCH, or DELETE endpoints for changing quantities. Stock mutation is reserved for controlled inventory transactions beginning with the stock movement ledger.
+
+Endpoints:
+
+```text
+GET /api/v1/inventory/balances
+GET /api/v1/inventory/form-options
+GET /api/v1/inventory/products/:productId
+GET /api/v1/inventory/warehouses/:warehouseId
+```
+
+All endpoints require `inventory.view`.
+
+### Balance list
+
+`GET /api/v1/inventory/balances` supports:
+
+```text
+page
+pageSize
+search
+sort
+direction
+productId
+warehouseId
+status
+```
+
+Search matches product SKU, product name, barcode, warehouse code, and warehouse name.
+
+Supported status values:
+
+```text
+in-stock
+low-stock
+out-of-stock
+```
+
+Status uses available quantity, not raw on-hand quantity:
+
+```text
+available = onHand - reserved
+
+available <= 0
+  -> out-of-stock
+
+available > 0 and available <= reorderLevel
+  -> low-stock
+
+available > reorderLevel
+  -> in-stock
+```
+
+The balance response matches the Angular inventory contract:
+
+```json
+{
+  "id": "...",
+  "productId": "...",
+  "sku": "SKU-001",
+  "productName": "Product",
+  "unitName": "Piece",
+  "unitSymbol": "pc",
+  "warehouseId": "...",
+  "warehouseCode": "WH-001",
+  "warehouseName": "Main Warehouse",
+  "quantityOnHand": 100,
+  "quantityReserved": 15,
+  "quantityAvailable": 85,
+  "reorderLevel": 20,
+  "status": "in-stock",
+  "updatedAt": "..."
+}
+```
+
+Supported balance sort fields:
+
+```text
+productName
+sku
+warehouseName
+warehouseCode
+quantityOnHand
+quantityReserved
+quantityAvailable
+reorderLevel
+updatedAt
+```
+
+### Inventory snapshots
+
+Product inventory returns the Product header, totals across warehouses, and paginated warehouse balances.
+
+Warehouse inventory returns the Warehouse header, totals across products, and paginated product balances.
+
+Totals include:
+
+```text
+quantityOnHand
+quantityReserved
+quantityAvailable
+lowStockLines
+outOfStockLines
+```
+
+`GET /api/v1/inventory/form-options` returns active warehouses for Angular inventory filtering.
+
 ## Users and access control
 
 User, role, and permission administration is protected by `user.manage`.
