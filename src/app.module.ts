@@ -13,6 +13,7 @@ import { CategoriesModule } from './modules/categories/categories.module.js';
 import { ProductsModule } from './modules/products/products.module.js';
 import { UnitsModule } from './modules/units/units.module.js';
 import { UsersModule } from './modules/users/users.module.js';
+import { WarehousesModule } from './modules/warehouses/warehouses.module.js';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { UsersModule } from './modules/users/users.module.js';
     CategoriesModule,
     UnitsModule,
     ProductsModule,
+    WarehousesModule,
     HealthModule,
   ],
 })

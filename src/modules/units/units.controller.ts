@@ -1,12 +1,12 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -15,10 +15,9 @@ import { RequirePermissions } from '../access-control/decorators/permissions.dec
 import { PermissionsGuard } from '../access-control/guards/permissions.guard.js';
 import { Permission } from '../access-control/rbac.constants.js';
 import { AccessTokenGuard } from '../auth/guards/access-token.guard.js';
-import { CreateUnitDto } from './dto/create-unit.dto.js';
-import { SetUnitStatusDto } from './dto/set-unit-status.dto.js';
 import { UnitListQueryDto } from './dto/unit-list-query.dto.js';
-import { UpdateUnitDto } from './dto/update-unit.dto.js';
+import { UnitStatusDto } from './dto/unit-status.dto.js';
+import { UnitUpsertDto } from './dto/unit-upsert.dto.js';
 import { UnitsService } from './units.service.js';
 
 @Controller('units')
@@ -40,15 +39,15 @@ export class UnitsController {
 
   @Post()
   @RequirePermissions(Permission.UnitsManage)
-  create(@Body() dto: CreateUnitDto) {
+  create(@Body() dto: UnitUpsertDto) {
     return this.units.create(dto);
   }
 
-  @Patch(':id')
+  @Put(':id')
   @RequirePermissions(Permission.UnitsManage)
   update(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateUnitDto,
+    @Body() dto: UnitUpsertDto,
   ) {
     return this.units.update(id, dto);
   }
@@ -57,14 +56,8 @@ export class UnitsController {
   @RequirePermissions(Permission.UnitsManage)
   setStatus(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: SetUnitStatusDto,
+    @Body() dto: UnitStatusDto,
   ) {
     return this.units.setStatus(id, dto);
-  }
-
-  @Delete(':id')
-  @RequirePermissions(Permission.UnitsManage)
-  remove(@Param('id', ParseUUIDPipe) id: string) {
-    return this.units.remove(id);
   }
 }

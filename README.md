@@ -213,14 +213,80 @@ Status permissions match Angular behavior:
 
 Set `CURRENCY_CODE` in the environment to change the three-letter currency code.
 
-## Categories and units
+## Master data
 
-Categories and units remain protected by:
+Categories, units, and warehouses use the same contract as the Angular Master Data feature.
 
-- `master-data.view` for reads
-- `master-data.manage` for mutations
+### Categories
 
-Existing master-data endpoints remain available from Group 6.
+```text
+GET   /api/v1/categories
+GET   /api/v1/categories/:id
+POST  /api/v1/categories
+PUT   /api/v1/categories/:id
+PATCH /api/v1/categories/:id/status
+```
+
+Fields:
+
+```text
+code
+name
+description
+active
+createdAt
+updatedAt
+```
+
+### Units
+
+```text
+GET   /api/v1/units
+GET   /api/v1/units/:id
+POST  /api/v1/units
+PUT   /api/v1/units/:id
+PATCH /api/v1/units/:id/status
+```
+
+Fields:
+
+```text
+code
+name
+symbol
+active
+createdAt
+updatedAt
+```
+
+### Warehouses
+
+```text
+GET   /api/v1/warehouses
+GET   /api/v1/warehouses/:id
+POST  /api/v1/warehouses
+PUT   /api/v1/warehouses/:id
+PATCH /api/v1/warehouses/:id/status
+```
+
+Fields:
+
+```text
+code
+name
+location
+active
+createdAt
+updatedAt
+```
+
+All three list endpoints support `page`, `pageSize`, `search`, `sort`, `direction`, and `active`.
+
+Master-data codes are normalized to uppercase. Category and unit codes are unique, and warehouse codes are unique.
+
+Master data is activated/deactivated rather than hard-deleted by the normal API. A warehouse cannot be deactivated while it has non-zero on-hand or reserved inventory.
+
+All master-data reads require `master-data.view`. Mutations require `master-data.manage`.
 
 ## Users and access control
 

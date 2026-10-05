@@ -11,10 +11,9 @@ import {
   toPaginationWindow,
 } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
-import type { CreateUnitDto } from './dto/create-unit.dto.js';
-import type { SetUnitStatusDto } from './dto/set-unit-status.dto.js';
 import type { UnitListQueryDto } from './dto/unit-list-query.dto.js';
-import type { UpdateUnitDto } from './dto/update-unit.dto.js';
+import type { UnitStatusDto } from './dto/unit-status.dto.js';
+import type { UnitUpsertDto } from './dto/unit-upsert.dto.js';
 
 @Injectable()
 export class UnitsService {
@@ -25,37 +24,52 @@ export class UnitsService {
     const search = query.search?.trim();
 
     const where = {
-      ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
+      ...(query.active !== undefined
+        ? { isActive: query.active }
+        : {}),
       ...(search
         ? {
             OR: [
-              { name: { contains: search, mode: 'insensitive' as const } },
-              { symbol: { contains: search, mode: 'insensitive' as const } },
+              {
+                code: {
+                  contains: search,
+                  mode: 'insensitive' as const,
+                },
+              },
+              {
+                name: {
+                  contains: search,
+                  mode: 'insensitive' as const,
+                },
+              },
+              {
+                symbol: {
+                  contains: search,
+                  mode: 'insensitive' as const,
+                },
+              },
             ],
           }
         : {}),
     };
 
-    const orderBy = this.orderBy(query.sort, query.resolvedOrder);
-
-    const [units, total] = await this.prisma.$transaction([
-      this.prisma.unit.findMany({
-        where,
-        skip,
-        take,
-        orderBy,
-        include: {
-          _count: {
-            select: { products: true },
-          },
-        },
-      }),
-      this.prisma.unit.count({ where }),
-    ]);
+    const [units, totalItems] =
+      await this.prisma.$transaction([
+        this.prisma.unit.findMany({
+          where,
+          skip,
+          take,
+          orderBy: this.orderBy(
+            query.sort,
+            query.resolvedOrder,
+          ),
+        }),
+        this.prisma.unit.count({ where }),
+      ]);
 
     return toPaginatedResult(
       units.map((unit) => this.toUnit(unit)),
-      total,
+      totalItems,
       query,
     );
   }
@@ -63,11 +77,6 @@ export class UnitsService {
   async get(id: string) {
     const unit = await this.prisma.unit.findUnique({
       where: { id },
-      include: {
-        _count: {
-          select: { products: true },
-        },
-      },
     });
 
     if (!unit) {
@@ -77,97 +86,70 @@ export class UnitsService {
     return this.toUnit(unit);
   }
 
-  async create(dto: CreateUnitDto) {
-    await this.assertUnique(dto.name, dto.symbol);
+  async create(dto: UnitUpsertDto) {
+    await this.assertUnique(
+      dto.code,
+      dto.name,
+      dto.symbol,
+    );
 
-    const unit = await this.prisma.unit.create({
-      data: {
-        name: dto.name,
-        symbol: dto.symbol,
-      },
-      include: {
-        _count: {
-          select: { products: true },
+    try {
+      const unit = await this.prisma.unit.create({
+        data: {
+          code: dto.code,
+          name: dto.name,
+          symbol: dto.symbol,
         },
-      },
-    });
-
-    return this.toUnit(unit);
-  }
-
-  async update(id: string, dto: UpdateUnitDto) {
-    const current = await this.requireUnit(id);
-
-    const nextName = dto.name ?? current.name;
-    const nextSymbol = dto.symbol ?? current.symbol;
-
-    if (
-      nextName.toLocaleLowerCase() !== current.name.toLocaleLowerCase() ||
-      nextSymbol.toLocaleLowerCase() !== current.symbol.toLocaleLowerCase()
-    ) {
-      await this.assertUnique(nextName, nextSymbol, id);
-    }
-
-    const unit = await this.prisma.unit.update({
-      where: { id },
-      data: {
-        ...(dto.name !== undefined ? { name: dto.name } : {}),
-        ...(dto.symbol !== undefined ? { symbol: dto.symbol } : {}),
-      },
-      include: {
-        _count: {
-          select: { products: true },
-        },
-      },
-    });
-
-    return this.toUnit(unit);
-  }
-
-  async setStatus(id: string, dto: SetUnitStatusDto) {
-    await this.requireUnit(id);
-
-    const unit = await this.prisma.unit.update({
-      where: { id },
-      data: { isActive: dto.isActive },
-      include: {
-        _count: {
-          select: { products: true },
-        },
-      },
-    });
-
-    return this.toUnit(unit);
-  }
-
-  async remove(id: string): Promise<{ deleted: true }> {
-    await this.requireUnit(id);
-
-    const productCount = await this.prisma.product.count({
-      where: { unitId: id },
-    });
-
-    if (productCount > 0) {
-      throw new ConflictException({
-        code: 'UNIT_IN_USE',
-        message:
-          'Unit cannot be deleted while products reference it; deactivate it instead',
       });
+
+      return this.toUnit(unit);
+    } catch (error) {
+      this.rethrowUniqueConstraint(error);
+      throw error;
     }
+  }
 
-    await this.prisma.unit.delete({ where: { id } });
+  async update(id: string, dto: UnitUpsertDto) {
+    await this.requireUnit(id);
+    await this.assertUnique(
+      dto.code,
+      dto.name,
+      dto.symbol,
+      id,
+    );
 
-    return { deleted: true };
+    try {
+      const unit = await this.prisma.unit.update({
+        where: { id },
+        data: {
+          code: dto.code,
+          name: dto.name,
+          symbol: dto.symbol,
+        },
+      });
+
+      return this.toUnit(unit);
+    } catch (error) {
+      this.rethrowUniqueConstraint(error);
+      throw error;
+    }
+  }
+
+  async setStatus(id: string, dto: UnitStatusDto) {
+    await this.requireUnit(id);
+
+    const unit = await this.prisma.unit.update({
+      where: { id },
+      data: { isActive: dto.active },
+    });
+
+    return this.toUnit(unit);
   }
 
   private async requireUnit(id: string) {
     const unit = await this.prisma.unit.findUnique({
       where: { id },
-      select: {
-        id: true,
-        name: true,
-        symbol: true,
-      },
+      select: { id: true },
     });
 
     if (!unit) {
@@ -178,55 +160,148 @@ export class UnitsService {
   }
 
   private async assertUnique(
+    code: string,
     name: string,
     symbol: string,
     excludeId?: string,
   ): Promise<void> {
-    const existing = await this.prisma.unit.findFirst({
-      where: {
-        OR: [
-          {
-            name: {
-              equals: name,
-              mode: 'insensitive',
+    const existing =
+      await this.prisma.unit.findFirst({
+        where: {
+          OR: [
+            {
+              code: {
+                equals: code,
+                mode: 'insensitive',
+              },
             },
-          },
-          {
-            symbol: {
-              equals: symbol,
-              mode: 'insensitive',
+            {
+              name: {
+                equals: name,
+                mode: 'insensitive',
+              },
             },
-          },
-        ],
-        ...(excludeId ? { NOT: { id: excludeId } } : {}),
-      },
-      select: {
-        id: true,
-        name: true,
-        symbol: true,
-      },
-    });
+            {
+              symbol: {
+                equals: symbol,
+                mode: 'insensitive',
+              },
+            },
+          ],
+          ...(excludeId
+            ? { NOT: { id: excludeId } }
+            : {}),
+        },
+        select: {
+          code: true,
+          name: true,
+          symbol: true,
+        },
+      });
 
     if (!existing) {
       return;
     }
 
-    const nameConflict =
-      existing.name.toLocaleLowerCase() === name.toLocaleLowerCase();
+    if (
+      existing.code.toLocaleLowerCase() ===
+      code.toLocaleLowerCase()
+    ) {
+      throw this.codeConflict();
+    }
 
-    throw new ConflictException({
-      code: nameConflict ? 'UNIT_NAME_EXISTS' : 'UNIT_SYMBOL_EXISTS',
-      message: nameConflict
-        ? 'A unit with this name already exists'
-        : 'A unit with this symbol already exists',
+    if (
+      existing.name.toLocaleLowerCase() ===
+      name.toLocaleLowerCase()
+    ) {
+      throw this.nameConflict();
+    }
+
+    throw this.symbolConflict();
+  }
+
+  private rethrowUniqueConstraint(error: unknown): void {
+    if (
+      typeof error !== 'object' ||
+      error === null ||
+      !('code' in error) ||
+      (error as { code?: unknown }).code !== 'P2002'
+    ) {
+      return;
+    }
+
+    const target = (
+      error as {
+        meta?: { target?: unknown };
+      }
+    ).meta?.target;
+    const fields = Array.isArray(target)
+      ? target.filter(
+          (value): value is string =>
+            typeof value === 'string',
+        )
+      : [];
+
+    if (
+      fields.some((field) =>
+        field.toLowerCase().includes('code'),
+      )
+    ) {
+      throw this.codeConflict();
+    }
+
+    if (
+      fields.some((field) =>
+        field.toLowerCase().includes('symbol'),
+      )
+    ) {
+      throw this.symbolConflict();
+    }
+
+    throw this.nameConflict();
+  }
+
+  private codeConflict(): ConflictException {
+    return new ConflictException({
+      code: 'UNIT_CODE_EXISTS',
+      message: 'A unit with this code already exists',
+      fields: {
+        code: ['Code must be unique.'],
+      },
     });
   }
 
-  private orderBy(sort: string | undefined, order: 'asc' | 'desc') {
+  private nameConflict(): ConflictException {
+    return new ConflictException({
+      code: 'UNIT_NAME_EXISTS',
+      message: 'A unit with this name already exists',
+      fields: {
+        name: ['Name must be unique.'],
+      },
+    });
+  }
+
+  private symbolConflict(): ConflictException {
+    return new ConflictException({
+      code: 'UNIT_SYMBOL_EXISTS',
+      message:
+        'A unit with this symbol already exists',
+      fields: {
+        symbol: ['Symbol must be unique.'],
+      },
+    });
+  }
+
+  private orderBy(
+    sort: string | undefined,
+    order: 'asc' | 'desc',
+  ) {
     switch (sort) {
       case undefined:
       case 'name':
         return { name: order };
+      case 'code':
+        return { code: order };
       case 'symbol':
         return { symbol: order };
       case 'createdAt':
@@ -236,7 +311,8 @@ export class UnitsService {
       default:
         throw new ApiException({
           code: 'INVALID_SORT_FIELD',
-          message: 'Unsupported sort field for units',
+          message:
+            'Unsupported sort field for units',
           statusCode: HttpStatus.BAD_REQUEST,
           details: { sort },
         });
@@ -245,19 +321,19 @@ export class UnitsService {
 
   private toUnit(unit: {
     id: string;
+    code: string;
     name: string;
     symbol: string;
     isActive: boolean;
     createdAt: Date;
     updatedAt: Date;
-    _count: { products: number };
   }) {
     return {
       id: unit.id,
+      code: unit.code,
       name: unit.name,
       symbol: unit.symbol,
-      isActive: unit.isActive,
-      productCount: unit._count.products,
+      active: unit.isActive,
       createdAt: unit.createdAt,
       updatedAt: unit.updatedAt,
     };

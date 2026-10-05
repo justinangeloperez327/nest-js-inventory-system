@@ -11,5 +11,5 @@ export class CategoryListQueryDto extends ListQueryDto {
     return value;
   })
   @IsBoolean()
-  isActive?: boolean;
+  active?: boolean;
 }

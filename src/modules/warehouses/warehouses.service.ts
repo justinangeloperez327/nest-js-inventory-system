@@ -11,15 +11,15 @@ import {
   toPaginationWindow,
 } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
-import type { CategoryListQueryDto } from './dto/category-list-query.dto.js';
-import type { CategoryStatusDto } from './dto/category-status.dto.js';
-import type { CategoryUpsertDto } from './dto/category-upsert.dto.js';
+import type { WarehouseListQueryDto } from './dto/warehouse-list-query.dto.js';
+import type { WarehouseStatusDto } from './dto/warehouse-status.dto.js';
+import type { WarehouseUpsertDto } from './dto/warehouse-upsert.dto.js';
 
 @Injectable()
-export class CategoriesService {
+export class WarehousesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(query: CategoryListQueryDto) {
+  async list(query: WarehouseListQueryDto) {
     const { skip, take } = toPaginationWindow(query);
     const search = query.search?.trim();
 
@@ -43,7 +43,7 @@ export class CategoriesService {
                 },
               },
               {
-                description: {
+                location: {
                   contains: search,
                   mode: 'insensitive' as const,
                 },
@@ -53,9 +53,9 @@ export class CategoriesService {
         : {}),
     };
 
-    const [categories, totalItems] =
+    const [warehouses, totalItems] =
       await this.prisma.$transaction([
-        this.prisma.category.findMany({
+        this.prisma.warehouse.findMany({
           where,
           skip,
           take,
@@ -64,12 +64,12 @@ export class CategoriesService {
             query.resolvedOrder,
           ),
         }),
-        this.prisma.category.count({ where }),
+        this.prisma.warehouse.count({ where }),
       ]);
 
     return toPaginatedResult(
-      categories.map((category) =>
-        this.toCategory(category),
+      warehouses.map((warehouse) =>
+        this.toWarehouse(warehouse),
       ),
       totalItems,
       query,
@@ -77,32 +77,32 @@ export class CategoriesService {
   }
 
   async get(id: string) {
-    const category =
-      await this.prisma.category.findUnique({
+    const warehouse =
+      await this.prisma.warehouse.findUnique({
         where: { id },
       });
 
-    if (!category) {
+    if (!warehouse) {
       throw this.notFound();
     }
 
-    return this.toCategory(category);
+    return this.toWarehouse(warehouse);
   }
 
-  async create(dto: CategoryUpsertDto) {
-    await this.assertUnique(dto.code, dto.name);
+  async create(dto: WarehouseUpsertDto) {
+    await this.assertCodeAvailable(dto.code);
 
     try {
-      const category =
-        await this.prisma.category.create({
+      const warehouse =
+        await this.prisma.warehouse.create({
           data: {
             code: dto.code,
             name: dto.name,
-            description: dto.description ?? null,
+            location: dto.location ?? null,
           },
         });
 
-      return this.toCategory(category);
+      return this.toWarehouse(warehouse);
     } catch (error) {
       this.rethrowUniqueConstraint(error);
       throw error;
@@ -111,27 +111,23 @@ export class CategoriesService {
 
   async update(
     id: string,
-    dto: CategoryUpsertDto,
+    dto: WarehouseUpsertDto,
   ) {
-    await this.requireCategory(id);
-    await this.assertUnique(
-      dto.code,
-      dto.name,
-      id,
-    );
+    await this.requireWarehouse(id);
+    await this.assertCodeAvailable(dto.code, id);
 
     try {
-      const category =
-        await this.prisma.category.update({
+      const warehouse =
+        await this.prisma.warehouse.update({
           where: { id },
           data: {
             code: dto.code,
             name: dto.name,
-            description: dto.description ?? null,
+            location: dto.location ?? null,
           },
         });
 
-      return this.toCategory(category);
+      return this.toWarehouse(warehouse);
     } catch (error) {
       this.rethrowUniqueConstraint(error);
       throw error;
@@ -140,130 +136,110 @@ export class CategoriesService {
 
   async setStatus(
     id: string,
-    dto: CategoryStatusDto,
+    dto: WarehouseStatusDto,
   ) {
-    await this.requireCategory(id);
+    await this.requireWarehouse(id);
 
-    const category =
-      await this.prisma.category.update({
+    if (!dto.active) {
+      await this.assertCanDeactivate(id);
+    }
+
+    const warehouse =
+      await this.prisma.warehouse.update({
         where: { id },
         data: { isActive: dto.active },
       });
 
-    return this.toCategory(category);
+    return this.toWarehouse(warehouse);
   }
 
-  private async requireCategory(id: string) {
-    const category =
-      await this.prisma.category.findUnique({
+  private async assertCanDeactivate(
+    warehouseId: string,
+  ): Promise<void> {
+    const inventory =
+      await this.prisma.inventoryItem.findFirst({
+        where: {
+          warehouseId,
+          OR: [
+            {
+              quantityOnHand: {
+                not: 0,
+              },
+            },
+            {
+              quantityReserved: {
+                not: 0,
+              },
+            },
+          ],
+        },
+        select: { id: true },
+      });
+
+    if (inventory) {
+      throw new ConflictException({
+        code: 'WAREHOUSE_HAS_STOCK',
+        message:
+          'Warehouse cannot be deactivated while it has on-hand or reserved inventory',
+      });
+    }
+  }
+
+  private async requireWarehouse(id: string) {
+    const warehouse =
+      await this.prisma.warehouse.findUnique({
         where: { id },
         select: { id: true },
       });
 
-    if (!category) {
+    if (!warehouse) {
       throw this.notFound();
     }
 
-    return category;
+    return warehouse;
   }
 
-  private async assertUnique(
+  private async assertCodeAvailable(
     code: string,
-    name: string,
     excludeId?: string,
   ): Promise<void> {
     const existing =
-      await this.prisma.category.findFirst({
+      await this.prisma.warehouse.findFirst({
         where: {
-          OR: [
-            {
-              code: {
-                equals: code,
-                mode: 'insensitive',
-              },
-            },
-            {
-              name: {
-                equals: name,
-                mode: 'insensitive',
-              },
-            },
-          ],
+          code: {
+            equals: code,
+            mode: 'insensitive',
+          },
           ...(excludeId
             ? { NOT: { id: excludeId } }
             : {}),
         },
-        select: {
-          code: true,
-          name: true,
-        },
+        select: { id: true },
       });
 
-    if (!existing) {
-      return;
-    }
-
-    if (
-      existing.code.toLocaleLowerCase() ===
-      code.toLocaleLowerCase()
-    ) {
+    if (existing) {
       throw this.codeConflict();
     }
-
-    throw this.nameConflict();
   }
 
   private rethrowUniqueConstraint(error: unknown): void {
     if (
-      typeof error !== 'object' ||
-      error === null ||
-      !('code' in error) ||
-      (error as { code?: unknown }).code !== 'P2002'
-    ) {
-      return;
-    }
-
-    const target = (
-      error as {
-        meta?: { target?: unknown };
-      }
-    ).meta?.target;
-    const fields = Array.isArray(target)
-      ? target.filter(
-          (value): value is string =>
-            typeof value === 'string',
-        )
-      : [];
-
-    if (
-      fields.some((field) =>
-        field.toLowerCase().includes('code'),
-      )
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: unknown }).code === 'P2002'
     ) {
       throw this.codeConflict();
     }
-
-    throw this.nameConflict();
   }
 
   private codeConflict(): ConflictException {
     return new ConflictException({
-      code: 'CATEGORY_CODE_EXISTS',
+      code: 'WAREHOUSE_CODE_EXISTS',
       message:
-        'A category with this code already exists',
+        'A warehouse with this code already exists',
       fields: {
         code: ['Code must be unique.'],
-      },
-    });
-  }
-
-  private nameConflict(): ConflictException {
-    return new ConflictException({
-      code: 'CATEGORY_NAME_EXISTS',
-      message:
-        'A category with this name already exists',
-      fields: {
-        name: ['Name must be unique.'],
       },
     });
   }
@@ -278,6 +254,8 @@ export class CategoriesService {
         return { name: order };
       case 'code':
         return { code: order };
+      case 'location':
+        return { location: order };
       case 'createdAt':
         return { createdAt: order };
       case 'updatedAt':
@@ -286,39 +264,39 @@ export class CategoriesService {
         throw new ApiException({
           code: 'INVALID_SORT_FIELD',
           message:
-            'Unsupported sort field for categories',
+            'Unsupported sort field for warehouses',
           statusCode: HttpStatus.BAD_REQUEST,
           details: { sort },
         });
     }
   }
 
-  private toCategory(category: {
+  private toWarehouse(warehouse: {
     id: string;
     code: string;
     name: string;
-    description: string | null;
+    location: string | null;
     isActive: boolean;
     createdAt: Date;
     updatedAt: Date;
   }) {
     return {
-      id: category.id,
-      code: category.code,
-      name: category.name,
-      ...(category.description
-        ? { description: category.description }
+      id: warehouse.id,
+      code: warehouse.code,
+      name: warehouse.name,
+      ...(warehouse.location
+        ? { location: warehouse.location }
         : {}),
-      active: category.isActive,
-      createdAt: category.createdAt,
-      updatedAt: category.updatedAt,
+      active: warehouse.isActive,
+      createdAt: warehouse.createdAt,
+      updatedAt: warehouse.updatedAt,
     };
   }
 
   private notFound(): NotFoundException {
     return new NotFoundException({
-      code: 'CATEGORY_NOT_FOUND',
-      message: 'Category was not found',
+      code: 'WAREHOUSE_NOT_FOUND',
+      message: 'Warehouse was not found',
     });
   }
 }

@@ -3,7 +3,7 @@ import { IsBoolean, IsOptional } from 'class-validator';
 
 import { ListQueryDto } from '../../../common/dto/list-query.dto.js';
 
-export class UnitListQueryDto extends ListQueryDto {
+export class WarehouseListQueryDto extends ListQueryDto {
   @IsOptional()
   @Transform(({ value }) => {
     if (value === 'true' || value === true) return true;

@@ -1,12 +1,12 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -17,9 +17,8 @@ import { Permission } from '../access-control/rbac.constants.js';
 import { AccessTokenGuard } from '../auth/guards/access-token.guard.js';
 import { CategoriesService } from './categories.service.js';
 import { CategoryListQueryDto } from './dto/category-list-query.dto.js';
-import { CreateCategoryDto } from './dto/create-category.dto.js';
-import { SetCategoryStatusDto } from './dto/set-category-status.dto.js';
-import { UpdateCategoryDto } from './dto/update-category.dto.js';
+import { CategoryStatusDto } from './dto/category-status.dto.js';
+import { CategoryUpsertDto } from './dto/category-upsert.dto.js';
 
 @Controller('categories')
 @UseGuards(AccessTokenGuard, PermissionsGuard)
@@ -40,15 +39,15 @@ export class CategoriesController {
 
   @Post()
   @RequirePermissions(Permission.CategoriesManage)
-  create(@Body() dto: CreateCategoryDto) {
+  create(@Body() dto: CategoryUpsertDto) {
     return this.categories.create(dto);
   }
 
-  @Patch(':id')
+  @Put(':id')
   @RequirePermissions(Permission.CategoriesManage)
   update(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateCategoryDto,
+    @Body() dto: CategoryUpsertDto,
   ) {
     return this.categories.update(id, dto);
   }
@@ -57,14 +56,8 @@ export class CategoriesController {
   @RequirePermissions(Permission.CategoriesManage)
   setStatus(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: SetCategoryStatusDto,
+    @Body() dto: CategoryStatusDto,
   ) {
     return this.categories.setStatus(id, dto);
-  }
-
-  @Delete(':id')
-  @RequirePermissions(Permission.CategoriesManage)
-  remove(@Param('id', ParseUUIDPipe) id: string) {
-    return this.categories.remove(id);
   }
 }

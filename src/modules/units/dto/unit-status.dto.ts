@@ -1,6 +1,6 @@
 import { IsBoolean } from 'class-validator';
 
-export class SetUnitStatusDto {
+export class UnitStatusDto {
   @IsBoolean()
-  isActive!: boolean;
+  active!: boolean;
 }
