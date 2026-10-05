@@ -849,6 +849,93 @@ cancelled
 
 The public API does not expose a cancellation command yet; `cancelled` remains reserved for a future controlled workflow.
 
+## Suppliers
+
+Suppliers are purchasing master data. Purchase orders and receipts remain separate transactional domains.
+
+Endpoints:
+
+```text
+GET   /api/v1/suppliers
+GET   /api/v1/suppliers/:id
+POST  /api/v1/suppliers
+PUT   /api/v1/suppliers/:id
+PATCH /api/v1/suppliers/:id/status
+GET   /api/v1/suppliers/:id/purchase-history
+```
+
+Supplier list/detail require `supplier.view`. Create, update, activate, and deactivate require `supplier.manage`.
+
+Purchase history requires both `supplier.view` and `purchase.view`.
+
+### Supplier fields
+
+```text
+code
+name
+contactName
+email
+phone
+taxNumber
+addressLine1
+addressLine2
+city
+stateProvince
+postalCode
+countryCode
+active
+createdAt
+updatedAt
+```
+
+Validation and normalization rules:
+
+- code is required, uppercased, max 50 characters, and unique
+- name is required, max 200 characters
+- contact name max 150 characters
+- email is normalized to lowercase and validated
+- phone max 50 characters
+- tax number is normalized to uppercase and unique when supplied
+- address lines max 250 characters
+- city/state max 100 characters
+- postal code max 30 characters
+- country code is optional and must be a two-letter uppercase code
+
+Supplier search covers code, name, contact name, email, and phone.
+
+The list supports:
+
+```text
+page
+pageSize
+search
+sort
+direction
+active
+```
+
+Supported sorts:
+
+```text
+name
+code
+contactName
+email
+countryCode
+updatedAt
+createdAt
+```
+
+Suppliers use activation/deactivation rather than normal hard deletion. Group 14 must reject creation of new purchase orders for inactive suppliers while retaining historical supplier references.
+
+### Purchase history compatibility
+
+Until Group 14 introduces the Purchase Order persistence model, `GET /suppliers/:id/purchase-history` returns a valid empty paginated response with the configured currency code.
+
+That preserves the Angular supplier profile contract without prematurely creating purchase-order tables in Supplier Management.
+
+Group 14 will replace the empty history implementation with actual purchase-order data while keeping the same response contract.
+
 ## Users and access control
 
 User, role, and permission administration is protected by `user.manage`.
