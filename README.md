@@ -1,6 +1,6 @@
 # NestJS Inventory System
 
-Inventory management API built with NestJS and TypeScript.
+REST backend for the Angular Inventory System.
 
 ## Requirements
 
@@ -10,11 +10,51 @@ Inventory management API built with NestJS and TypeScript.
 ## Setup
 
 ```bash
+cp .env.example .env
 npm install
 npm run start:dev
 ```
 
-The application starts on `http://localhost:3000` by default.
+The API starts at:
+
+```text
+http://localhost:3000/api/v1
+```
+
+Health check:
+
+```text
+GET /api/v1/health
+```
+
+Response:
+
+```json
+{
+  "status": "ok"
+}
+```
+
+## Group 1 foundation
+
+The application currently includes:
+
+- environment-aware configuration
+- `/api/v1` global API prefix
+- Angular development CORS configuration
+- global validation with DTO whitelisting
+- global HTTP exception handling
+- request IDs via `X-Request-Id`
+- structured HTTP request logging
+- graceful shutdown hooks
+- health endpoint
+- Node 24 / ESM production startup
+
+## Environment
+
+See `.env.example`.
+
+`CORS_ORIGINS` accepts a comma-separated list when multiple Angular origins are required.
 
 ## Scripts
 
@@ -26,6 +66,7 @@ npm run start:debug
 npm run start:prod
 npm run lint
 npm run format
+npm run check
 ```
 
 ## Stack
@@ -35,3 +76,5 @@ npm run format
 - Express
 - OXLint
 - Prettier
+
+PostgreSQL and Prisma are intentionally deferred to Group 2.

@@ -1,0 +1,106 @@
+import {
+  ArgumentsHost,
+  Catch,
+  ExceptionFilter,
+  HttpException,
+  HttpStatus,
+  Logger,
+} from '@nestjs/common';
+import type { Response } from 'express';
+
+import type { RequestWithId } from '../types/request-with-id.type.js';
+
+interface HttpExceptionPayload {
+  code?: string;
+  error?: string;
+  message?: string | string[];
+}
+
+@Catch()
+export class HttpExceptionFilter implements ExceptionFilter {
+  private readonly logger = new Logger(HttpExceptionFilter.name);
+
+  catch(exception: unknown, host: ArgumentsHost): void {
+    const context = host.switchToHttp();
+    const request = context.getRequest<RequestWithId>();
+    const response = context.getResponse<Response>();
+
+    const statusCode =
+      exception instanceof HttpException
+        ? exception.getStatus()
+        : HttpStatus.INTERNAL_SERVER_ERROR;
+
+    const payload = this.resolvePayload(exception, statusCode);
+
+    if (statusCode >= HttpStatus.INTERNAL_SERVER_ERROR) {
+      const stack = exception instanceof Error ? exception.stack : undefined;
+      this.logger.error(
+        JSON.stringify({
+          requestId: request.id,
+          method: request.method,
+          path: request.originalUrl,
+          statusCode,
+          error: exception instanceof Error ? exception.message : 'Unknown error',
+        }),
+        stack,
+      );
+    }
+
+    response.status(statusCode).json({
+      error: {
+        code: payload.code,
+        message: payload.message,
+        statusCode,
+        path: request.originalUrl,
+        requestId: request.id,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+
+  private resolvePayload(
+    exception: unknown,
+    statusCode: number,
+  ): { code: string; message: string | string[] } {
+    if (!(exception instanceof HttpException)) {
+      return {
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Internal server error',
+      };
+    }
+
+    const response = exception.getResponse();
+
+    if (typeof response === 'string') {
+      return {
+        code: `HTTP_${statusCode}`,
+        message: response,
+      };
+    }
+
+    const payload = response as HttpExceptionPayload;
+    const isValidationError =
+      statusCode === HttpStatus.BAD_REQUEST && Array.isArray(payload.message);
+
+    return {
+      code:
+        payload.code ??
+        (isValidationError
+          ? 'VALIDATION_ERROR'
+          : this.toErrorCode(payload.error) ?? `HTTP_${statusCode}`),
+      message: payload.message ?? exception.message,
+    };
+  }
+
+  private toErrorCode(value: string | undefined): string | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    return value
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+  }
+}
