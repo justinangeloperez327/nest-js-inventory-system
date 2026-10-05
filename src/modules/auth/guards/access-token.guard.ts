@@ -107,6 +107,7 @@ export class AccessTokenGuard implements CanActivate {
     return {
       id: user.id,
       email: user.email,
+      name: `${user.firstName} ${user.lastName}`.trim(),
       firstName: user.firstName,
       lastName: user.lastName,
       roles: user.roles.map(({ role }) => role.name),

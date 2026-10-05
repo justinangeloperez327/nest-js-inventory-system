@@ -8,10 +8,7 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 
-import type {
-  ApiError,
-  ApiErrorResponse,
-} from '../interfaces/api-response.interface.js';
+import type { ApiErrorResponse } from '../interfaces/api-response.interface.js';
 import type { RequestWithId } from '../types/request-with-id.type.js';
 
 interface HttpExceptionPayload {
@@ -24,7 +21,7 @@ interface HttpExceptionPayload {
 
 interface ResolvedErrorPayload {
   code: string;
-  message: string | string[];
+  message: string;
   fields?: Record<string, string[]>;
   details?: unknown;
 }
@@ -53,24 +50,27 @@ export class HttpExceptionFilter implements ExceptionFilter {
           method: request.method,
           path: request.originalUrl,
           statusCode,
-          error: exception instanceof Error ? exception.message : 'Unknown error',
+          error:
+            exception instanceof Error
+              ? exception.message
+              : 'Unknown error',
         }),
         stack,
       );
     }
 
-    const error: ApiError = {
+    const body: ApiErrorResponse = {
       code: payload.code,
       message: payload.message,
       statusCode,
       path: request.originalUrl,
-      requestId: request.id,
+      traceId: request.id,
       timestamp: new Date().toISOString(),
-      ...(payload.fields ? { fields: payload.fields } : {}),
-      ...(payload.details !== undefined ? { details: payload.details } : {}),
+      ...(payload.fields ? { errors: payload.fields } : {}),
+      ...(payload.details !== undefined
+        ? { details: payload.details }
+        : {}),
     };
-
-    const body: ApiErrorResponse = { error };
 
     response.status(statusCode).json(body);
   }
@@ -102,13 +102,40 @@ export class HttpExceptionFilter implements ExceptionFilter {
         payload.code ??
         this.toErrorCode(payload.error) ??
         `HTTP_${statusCode}`,
-      message: payload.message ?? exception.message,
+      message: this.normalizeMessage(
+        payload.message,
+        exception.message,
+      ),
       ...(payload.fields ? { fields: payload.fields } : {}),
-      ...(payload.details !== undefined ? { details: payload.details } : {}),
+      ...(payload.details !== undefined
+        ? { details: payload.details }
+        : {}),
     };
   }
 
-  private toErrorCode(value: string | undefined): string | undefined {
+  private normalizeMessage(
+    message: string | string[] | undefined,
+    fallback: string,
+  ): string {
+    if (typeof message === 'string' && message.trim()) {
+      return message;
+    }
+
+    if (Array.isArray(message)) {
+      const first = message.find(
+        (item) => typeof item === 'string' && item.trim(),
+      );
+      if (first) {
+        return first;
+      }
+    }
+
+    return fallback;
+  }
+
+  private toErrorCode(
+    value: string | undefined,
+  ): string | undefined {
     if (!value) {
       return undefined;
     }

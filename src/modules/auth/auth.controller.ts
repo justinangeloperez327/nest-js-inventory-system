@@ -28,16 +28,19 @@ export class AuthController {
 
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  refresh(@Body() dto: RefreshTokenDto): Promise<AuthSession> {
+  refresh(
+    @Body() dto: RefreshTokenDto,
+  ): Promise<AuthSession> {
     return this.auth.refresh(dto.refreshToken);
   }
 
   @Post('logout')
-  @HttpCode(HttpStatus.OK)
-  logout(
-    @Body() dto: RefreshTokenDto,
-  ): Promise<{ loggedOut: true }> {
-    return this.auth.logout(dto.refreshToken);
+  @UseGuards(AccessTokenGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async logout(
+    @CurrentUser() user: AuthUser,
+  ): Promise<void> {
+    await this.auth.logout(user.id);
   }
 
   @Get('me')

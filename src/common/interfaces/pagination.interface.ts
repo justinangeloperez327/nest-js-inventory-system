@@ -1,14 +1,14 @@
 export interface PaginationMeta {
   page: number;
   pageSize: number;
-  total: number;
+  totalItems: number;
   totalPages: number;
 }
 
 export class PaginatedResult<T> {
   constructor(
     public readonly data: T[],
-    public readonly meta: PaginationMeta,
+    public readonly pagination: PaginationMeta,
   ) {}
 }
 

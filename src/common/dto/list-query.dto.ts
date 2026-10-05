@@ -17,4 +17,12 @@ export class ListQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsEnum(SortOrder)
   order: SortOrder = SortOrder.Asc;
+
+  @IsOptional()
+  @IsEnum(SortOrder)
+  direction?: SortOrder;
+
+  get resolvedOrder(): SortOrder {
+    return this.direction ?? this.order;
+  }
 }

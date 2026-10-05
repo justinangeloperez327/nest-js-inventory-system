@@ -16,20 +16,24 @@ export function toPaginationWindow(
 
 export function createPaginationMeta(
   query: PaginationQueryDto,
-  total: number,
+  totalItems: number,
 ): PaginationMeta {
   return {
     page: query.page,
     pageSize: query.pageSize,
-    total,
-    totalPages: total === 0 ? 0 : Math.ceil(total / query.pageSize),
+    totalItems,
+    totalPages:
+      totalItems === 0 ? 0 : Math.ceil(totalItems / query.pageSize),
   };
 }
 
 export function toPaginatedResult<T>(
   data: T[],
-  total: number,
+  totalItems: number,
   query: PaginationQueryDto,
 ): PaginatedResult<T> {
-  return new PaginatedResult(data, createPaginationMeta(query, total));
+  return new PaginatedResult(
+    data,
+    createPaginationMeta(query, totalItems),
+  );
 }

@@ -1,18 +1,10 @@
-export interface ApiResponse<T> {
-  data: T;
-}
-
-export interface ApiError {
+export interface ApiErrorResponse {
   code: string;
-  message: string | string[];
+  message: string;
   statusCode: number;
   path: string;
-  requestId: string;
+  traceId: string;
   timestamp: string;
-  fields?: Record<string, string[]>;
+  errors?: Record<string, string[]>;
   details?: unknown;
-}
-
-export interface ApiErrorResponse {
-  error: ApiError;
 }

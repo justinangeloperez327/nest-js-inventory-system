@@ -126,25 +126,16 @@ export class AuthService {
     return this.toSession(tokens, this.toAuthUser(storedToken.user));
   }
 
-  async logout(refreshToken: string): Promise<{ loggedOut: true }> {
-    try {
-      const payload = await this.verifyRefreshToken(refreshToken);
-
-      await this.prisma.refreshToken.updateMany({
-        where: {
-          id: payload.jti,
-          userId: payload.sub,
-          revokedAt: null,
-        },
-        data: {
-          revokedAt: new Date(),
-        },
-      });
-    } catch {
-      // Logout is deliberately idempotent. The client can discard a stale token.
-    }
-
-    return { loggedOut: true };
+  async logout(userId: string): Promise<void> {
+    await this.prisma.refreshToken.updateMany({
+      where: {
+        userId,
+        revokedAt: null,
+      },
+      data: {
+        revokedAt: new Date(),
+      },
+    });
   }
 
   private async prepareTokenPair(
@@ -233,6 +224,11 @@ export class AuthService {
       refreshToken: tokens.refreshToken,
       tokenType: 'Bearer',
       expiresIn: this.config.getOrThrow<number>('auth.accessTtlSeconds'),
+      expiresAt: new Date(
+        Date.now() +
+          this.config.getOrThrow<number>('auth.accessTtlSeconds') *
+            1000,
+      ).toISOString(),
       user,
     };
   }
@@ -256,6 +252,7 @@ export class AuthService {
     return {
       id: user.id,
       email: user.email,
+      name: `${user.firstName} ${user.lastName}`.trim(),
       firstName: user.firstName,
       lastName: user.lastName,
       roles: user.roles.map(({ role }) => role.name),

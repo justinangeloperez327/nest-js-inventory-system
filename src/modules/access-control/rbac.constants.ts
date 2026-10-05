@@ -1,43 +1,54 @@
 export const Permission = {
-  UsersRead: 'users.read',
-  UsersCreate: 'users.create',
-  UsersUpdate: 'users.update',
-  UsersDeactivate: 'users.deactivate',
-  UsersAssignRoles: 'users.assign_roles',
-  RolesRead: 'roles.read',
-  RolesCreate: 'roles.create',
-  RolesUpdate: 'roles.update',
-  RolesDelete: 'roles.delete',
-  RolesAssignPermissions: 'roles.assign_permissions',
-  PermissionsRead: 'permissions.read',
+  UsersRead: 'user.manage',
+  UsersCreate: 'user.manage',
+  UsersUpdate: 'user.manage',
+  UsersDeactivate: 'user.manage',
+  UsersAssignRoles: 'user.manage',
+
+  RolesRead: 'user.manage',
+  RolesCreate: 'user.manage',
+  RolesUpdate: 'user.manage',
+  RolesDelete: 'user.manage',
+  RolesAssignPermissions: 'user.manage',
+  PermissionsRead: 'user.manage',
+
   DashboardView: 'dashboard.view',
-  CategoriesRead: 'categories.read',
-  CategoriesManage: 'categories.manage',
-  UnitsRead: 'units.read',
-  UnitsManage: 'units.manage',
-  ProductsRead: 'products.read',
-  ProductsCreate: 'products.create',
-  ProductsUpdate: 'products.update',
-  ProductsDeactivate: 'products.deactivate',
-  WarehousesRead: 'warehouses.read',
-  WarehousesManage: 'warehouses.manage',
-  InventoryRead: 'inventory.read',
+
+  CategoriesRead: 'master-data.view',
+  CategoriesManage: 'master-data.manage',
+  UnitsRead: 'master-data.view',
+  UnitsManage: 'master-data.manage',
+
+  ProductsRead: 'product.view',
+  ProductsCreate: 'product.create',
+  ProductsUpdate: 'product.update',
+  ProductsDeactivate: 'product.delete',
+
+  WarehousesRead: 'master-data.view',
+  WarehousesManage: 'master-data.manage',
+
+  InventoryRead: 'inventory.view',
   InventoryAdjust: 'inventory.adjust',
   InventoryTransfer: 'inventory.transfer',
   InventoryCount: 'inventory.count',
-  SuppliersRead: 'suppliers.read',
-  SuppliersManage: 'suppliers.manage',
-  PurchasesRead: 'purchases.read',
-  PurchasesCreate: 'purchases.create',
-  PurchasesApprove: 'purchases.approve',
-  PurchasesReceive: 'purchases.receive',
-  CustomersRead: 'customers.read',
-  CustomersManage: 'customers.manage',
-  SalesRead: 'sales.read',
+
+  SuppliersRead: 'supplier.view',
+  SuppliersManage: 'supplier.manage',
+
+  PurchasesRead: 'purchase.view',
+  PurchasesCreate: 'purchase.create',
+  PurchasesApprove: 'purchase.approve',
+  PurchasesReceive: 'purchase.receive',
+
+  CustomersRead: 'sales.view',
+  CustomersManage: 'sales.create',
+
+  SalesRead: 'sales.view',
   SalesCreate: 'sales.create',
-  SalesConfirm: 'sales.confirm',
+  SalesConfirm: 'sales.create',
+
   ReportsView: 'reports.view',
-  AuditRead: 'audit.read',
+  AuditRead: 'user.manage',
   SettingsManage: 'settings.manage',
 } as const;
 
@@ -48,46 +59,94 @@ export const PERMISSION_DEFINITIONS: ReadonlyArray<{
   key: PermissionKey;
   description: string;
 }> = [
-  { key: Permission.UsersRead, description: 'View users' },
-  { key: Permission.UsersCreate, description: 'Create users' },
-  { key: Permission.UsersUpdate, description: 'Update users and passwords' },
-  { key: Permission.UsersDeactivate, description: 'Activate or deactivate users' },
-  { key: Permission.UsersAssignRoles, description: 'Assign roles to users' },
-  { key: Permission.RolesRead, description: 'View roles' },
-  { key: Permission.RolesCreate, description: 'Create custom roles' },
-  { key: Permission.RolesUpdate, description: 'Update custom roles' },
-  { key: Permission.RolesDelete, description: 'Delete unused custom roles' },
-  { key: Permission.RolesAssignPermissions, description: 'Assign permissions to custom roles' },
-  { key: Permission.PermissionsRead, description: 'View permission catalog' },
-  { key: Permission.DashboardView, description: 'View dashboard' },
-  { key: Permission.CategoriesRead, description: 'View product categories' },
-  { key: Permission.CategoriesManage, description: 'Manage product categories' },
-  { key: Permission.UnitsRead, description: 'View units of measure' },
-  { key: Permission.UnitsManage, description: 'Manage units of measure' },
-  { key: Permission.ProductsRead, description: 'View products' },
-  { key: Permission.ProductsCreate, description: 'Create products' },
-  { key: Permission.ProductsUpdate, description: 'Update products' },
-  { key: Permission.ProductsDeactivate, description: 'Activate or deactivate products' },
-  { key: Permission.WarehousesRead, description: 'View warehouses' },
-  { key: Permission.WarehousesManage, description: 'Manage warehouses' },
-  { key: Permission.InventoryRead, description: 'View inventory balances and movements' },
-  { key: Permission.InventoryAdjust, description: 'Create stock adjustments' },
-  { key: Permission.InventoryTransfer, description: 'Transfer stock between warehouses' },
-  { key: Permission.InventoryCount, description: 'Perform stock counts' },
-  { key: Permission.SuppliersRead, description: 'View suppliers' },
-  { key: Permission.SuppliersManage, description: 'Manage suppliers' },
-  { key: Permission.PurchasesRead, description: 'View purchase orders' },
-  { key: Permission.PurchasesCreate, description: 'Create purchase orders' },
-  { key: Permission.PurchasesApprove, description: 'Approve purchase orders' },
-  { key: Permission.PurchasesReceive, description: 'Receive purchase orders' },
-  { key: Permission.CustomersRead, description: 'View customers' },
-  { key: Permission.CustomersManage, description: 'Manage customers' },
-  { key: Permission.SalesRead, description: 'View sales' },
-  { key: Permission.SalesCreate, description: 'Create sales' },
-  { key: Permission.SalesConfirm, description: 'Confirm sales and issue stock' },
-  { key: Permission.ReportsView, description: 'View reports' },
-  { key: Permission.AuditRead, description: 'View audit logs' },
-  { key: Permission.SettingsManage, description: 'Manage system settings' },
+  {
+    key: Permission.DashboardView,
+    description: 'View dashboard',
+  },
+  {
+    key: Permission.ProductsRead,
+    description: 'View products',
+  },
+  {
+    key: Permission.ProductsCreate,
+    description: 'Create products',
+  },
+  {
+    key: Permission.ProductsUpdate,
+    description: 'Update products and reactivate products',
+  },
+  {
+    key: Permission.ProductsDeactivate,
+    description: 'Deactivate products',
+  },
+  {
+    key: Permission.CategoriesRead,
+    description: 'View master data',
+  },
+  {
+    key: Permission.CategoriesManage,
+    description: 'Manage master data',
+  },
+  {
+    key: Permission.SuppliersRead,
+    description: 'View suppliers',
+  },
+  {
+    key: Permission.SuppliersManage,
+    description: 'Manage suppliers',
+  },
+  {
+    key: Permission.InventoryRead,
+    description: 'View inventory balances and movements',
+  },
+  {
+    key: Permission.InventoryAdjust,
+    description: 'Create stock adjustments',
+  },
+  {
+    key: Permission.InventoryTransfer,
+    description: 'Transfer stock between warehouses',
+  },
+  {
+    key: Permission.InventoryCount,
+    description: 'Perform stock counts',
+  },
+  {
+    key: Permission.PurchasesRead,
+    description: 'View purchase orders',
+  },
+  {
+    key: Permission.PurchasesCreate,
+    description: 'Create purchase orders',
+  },
+  {
+    key: Permission.PurchasesApprove,
+    description: 'Approve purchase orders',
+  },
+  {
+    key: Permission.PurchasesReceive,
+    description: 'Receive purchase orders',
+  },
+  {
+    key: Permission.SalesRead,
+    description: 'View sales',
+  },
+  {
+    key: Permission.SalesCreate,
+    description: 'Create and manage sales',
+  },
+  {
+    key: Permission.ReportsView,
+    description: 'View reports',
+  },
+  {
+    key: Permission.UsersRead,
+    description: 'Manage users, roles, permissions, and audit access',
+  },
+  {
+    key: Permission.SettingsManage,
+    description: 'Manage system settings',
+  },
 ];
 
 export const SystemRole = {
@@ -99,23 +158,35 @@ export const SystemRole = {
   Viewer: 'Viewer',
 } as const;
 
-const ALL_PERMISSIONS = PERMISSION_DEFINITIONS.map(({ key }) => key);
+const ALL_PERMISSIONS =
+  PERMISSION_DEFINITIONS.map(({ key }) => key);
 
 export const SYSTEM_ROLE_DEFINITIONS: ReadonlyArray<{
   name: string;
   description: string;
   permissions: readonly PermissionKey[];
 }> = [
-  { name: SystemRole.Administrator, description: 'Full system administration', permissions: ALL_PERMISSIONS },
+  {
+    name: SystemRole.Administrator,
+    description: 'Full system administration',
+    permissions: ALL_PERMISSIONS,
+  },
   {
     name: SystemRole.InventoryManager,
-    description: 'Manage catalog, warehouses, and inventory operations',
+    description:
+      'Manage product master data, warehouses, and inventory operations',
     permissions: [
-      Permission.DashboardView, Permission.CategoriesRead, Permission.CategoriesManage,
-      Permission.UnitsRead, Permission.UnitsManage, Permission.ProductsRead,
-      Permission.ProductsCreate, Permission.ProductsUpdate, Permission.ProductsDeactivate,
-      Permission.WarehousesRead, Permission.WarehousesManage, Permission.InventoryRead,
-      Permission.InventoryAdjust, Permission.InventoryTransfer, Permission.InventoryCount,
+      Permission.DashboardView,
+      Permission.CategoriesRead,
+      Permission.CategoriesManage,
+      Permission.ProductsRead,
+      Permission.ProductsCreate,
+      Permission.ProductsUpdate,
+      Permission.ProductsDeactivate,
+      Permission.InventoryRead,
+      Permission.InventoryAdjust,
+      Permission.InventoryTransfer,
+      Permission.InventoryCount,
       Permission.ReportsView,
     ],
   },
@@ -123,38 +194,55 @@ export const SYSTEM_ROLE_DEFINITIONS: ReadonlyArray<{
     name: SystemRole.WarehouseStaff,
     description: 'Operate warehouse inventory',
     permissions: [
-      Permission.DashboardView, Permission.ProductsRead, Permission.WarehousesRead,
-      Permission.InventoryRead, Permission.InventoryAdjust, Permission.InventoryTransfer,
+      Permission.DashboardView,
+      Permission.CategoriesRead,
+      Permission.ProductsRead,
+      Permission.InventoryRead,
+      Permission.InventoryAdjust,
+      Permission.InventoryTransfer,
       Permission.InventoryCount,
     ],
   },
   {
     name: SystemRole.Purchasing,
-    description: 'Manage suppliers, purchasing, and receiving',
+    description:
+      'Manage suppliers, purchasing, and receiving',
     permissions: [
-      Permission.DashboardView, Permission.ProductsRead, Permission.InventoryRead,
-      Permission.SuppliersRead, Permission.SuppliersManage, Permission.PurchasesRead,
-      Permission.PurchasesCreate, Permission.PurchasesApprove, Permission.PurchasesReceive,
+      Permission.DashboardView,
+      Permission.ProductsRead,
+      Permission.InventoryRead,
+      Permission.SuppliersRead,
+      Permission.SuppliersManage,
+      Permission.PurchasesRead,
+      Permission.PurchasesCreate,
+      Permission.PurchasesApprove,
+      Permission.PurchasesReceive,
       Permission.ReportsView,
     ],
   },
   {
     name: SystemRole.Sales,
-    description: 'Manage customers and sales',
+    description: 'Manage sales operations',
     permissions: [
-      Permission.DashboardView, Permission.ProductsRead, Permission.InventoryRead,
-      Permission.CustomersRead, Permission.CustomersManage, Permission.SalesRead,
-      Permission.SalesCreate, Permission.SalesConfirm,
+      Permission.DashboardView,
+      Permission.ProductsRead,
+      Permission.InventoryRead,
+      Permission.SalesRead,
+      Permission.SalesCreate,
     ],
   },
   {
     name: SystemRole.Viewer,
     description: 'Read-only operational access',
     permissions: [
-      Permission.DashboardView, Permission.CategoriesRead, Permission.UnitsRead,
-      Permission.ProductsRead, Permission.WarehousesRead, Permission.InventoryRead,
-      Permission.SuppliersRead, Permission.PurchasesRead, Permission.CustomersRead,
-      Permission.SalesRead, Permission.ReportsView,
+      Permission.DashboardView,
+      Permission.CategoriesRead,
+      Permission.ProductsRead,
+      Permission.SuppliersRead,
+      Permission.InventoryRead,
+      Permission.PurchasesRead,
+      Permission.SalesRead,
+      Permission.ReportsView,
     ],
   },
 ];

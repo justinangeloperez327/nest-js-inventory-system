@@ -36,7 +36,7 @@ export class UnitsService {
         : {}),
     };
 
-    const orderBy = this.orderBy(query.sort, query.order);
+    const orderBy = this.orderBy(query.sort, query.resolvedOrder);
 
     const [units, total] = await this.prisma.$transaction([
       this.prisma.unit.findMany({

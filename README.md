@@ -19,17 +19,49 @@ npm run db:seed
 npm run start:dev
 ```
 
-Replace the example JWT secrets before using the application outside local development.
+The default API prefix is:
 
-## First administrator
-
-There is no public registration endpoint. Set the optional `BOOTSTRAP_ADMIN_*` values in `.env`, then run:
-
-```bash
-npm run db:seed
+```text
+/api/v1
 ```
 
-The seed creates the permission catalog, system roles, settings, and the optional first Administrator.
+The Angular application should therefore use `/api/v1` as its API base URL when the frontend and backend are connected directly.
+
+## Angular API contract
+
+Successful resource endpoints return the resource body directly.
+
+Paginated endpoints return:
+
+```json
+{
+  "data": [],
+  "pagination": {
+    "page": 1,
+    "pageSize": 25,
+    "totalItems": 0,
+    "totalPages": 0
+  }
+}
+```
+
+List APIs accept `direction=asc|desc`. The earlier `order` parameter remains supported as a backend-compatible alias.
+
+Errors follow the Angular HTTP normalizer contract:
+
+```json
+{
+  "code": "VALIDATION_ERROR",
+  "message": "The request contains invalid data.",
+  "statusCode": 400,
+  "path": "/api/v1/products",
+  "traceId": "...",
+  "timestamp": "...",
+  "errors": {
+    "sku": ["SKU must be unique."]
+  }
+}
+```
 
 ## Authentication
 
@@ -40,87 +72,170 @@ POST /api/v1/auth/logout
 GET  /api/v1/auth/me
 ```
 
-The backend uses short-lived access JWTs and rotating refresh JWTs.
+Login returns the access token and current user directly. The response also includes refresh-token data for future refresh support.
+
+Logout is authenticated by the access token, accepts the Angular client's empty request body, revokes active refresh tokens for that user, and returns HTTP 204.
+
+There is no public registration endpoint.
 
 ## RBAC
 
-Authorization is permission-based. Seeded roles are Administrator, Inventory Manager, Warehouse Staff, Purchasing, Sales, and Viewer.
-
-System roles are application-managed. Custom roles can be managed through:
+Backend permission values use the same canonical permission strings as the Angular application:
 
 ```text
-GET    /api/v1/roles
-GET    /api/v1/roles/:id
-POST   /api/v1/roles
-PATCH  /api/v1/roles/:id
-PUT    /api/v1/roles/:id/permissions
-DELETE /api/v1/roles/:id
-GET    /api/v1/permissions
+dashboard.view
+
+product.view
+product.create
+product.update
+product.delete
+
+master-data.view
+master-data.manage
+
+supplier.view
+supplier.manage
+
+inventory.view
+inventory.adjust
+inventory.transfer
+inventory.count
+
+purchase.view
+purchase.create
+purchase.approve
+purchase.receive
+
+sales.view
+sales.create
+
+reports.view
+user.manage
+settings.manage
 ```
 
-## Users
+After updating an existing seeded database to this version, run:
+
+```bash
+npm run db:seed
+```
+
+to synchronize system-role permission assignments.
+
+## Products
+
+Product Master is intentionally separate from stock balances. Products contain master data; warehouse quantities are implemented by the inventory domain.
+
+Endpoints:
 
 ```text
-GET   /api/v1/users
-GET   /api/v1/users/:id
-POST  /api/v1/users
-PATCH /api/v1/users/:id
-PATCH /api/v1/users/:id/status
-PUT   /api/v1/users/:id/roles
-PUT   /api/v1/users/:id/password
+GET   /api/v1/products
+GET   /api/v1/products/form-options
+GET   /api/v1/products/:id
+POST  /api/v1/products
+PUT   /api/v1/products/:id
+PATCH /api/v1/products/:id/status
 ```
 
-## Categories
+The list endpoint supports:
 
 ```text
-GET    /api/v1/categories
-GET    /api/v1/categories/:id
-POST   /api/v1/categories
-PATCH  /api/v1/categories/:id
-PATCH  /api/v1/categories/:id/status
-DELETE /api/v1/categories/:id
+page
+pageSize
+search
+sort
+direction
+categoryId
+unitId
+active
 ```
 
-Category lists support pagination, search, status filtering, and sorting by `name`, `createdAt`, or `updatedAt`.
+Search matches SKU, barcode, and name.
 
-Category names are checked case-insensitively for duplicates. A category referenced by products cannot be deleted; deactivate it instead.
-
-Category responses include `productCount`.
-
-## Units
+Supported sort fields:
 
 ```text
-GET    /api/v1/units
-GET    /api/v1/units/:id
-POST   /api/v1/units
-PATCH  /api/v1/units/:id
-PATCH  /api/v1/units/:id/status
-DELETE /api/v1/units/:id
+name
+sku
+costPrice
+sellingPrice
+reorderLevel
+createdAt
+updatedAt
 ```
 
-Unit lists support pagination, search, status filtering, and sorting by `name`, `symbol`, `createdAt`, or `updatedAt`.
-
-Unit names and symbols are checked case-insensitively for duplicates. A unit referenced by products cannot be deleted; deactivate it instead.
-
-Unit responses include `productCount`.
-
-## API contract
-
-Successful single-resource responses use `{ "data": ... }`. Paginated collections use:
+The Product API contract matches the Angular models:
 
 ```json
 {
-  "data": [],
-  "meta": {
-    "page": 1,
-    "pageSize": 25,
-    "total": 0,
-    "totalPages": 0
-  }
+  "id": "...",
+  "sku": "SKU-001",
+  "barcode": "123456789",
+  "name": "Product",
+  "categoryId": "...",
+  "categoryName": "Category",
+  "unitId": "...",
+  "unitName": "Piece",
+  "costPrice": 10,
+  "sellingPrice": 12.5,
+  "reorderLevel": 5,
+  "active": true,
+  "currencyCode": "AED",
+  "createdAt": "...",
+  "updatedAt": "..."
 }
 ```
 
-The default page size is `25` and the maximum page size is `100`.
+Category and unit are optional for Product Master, matching the Angular form. When assigned or changed, the selected master-data record must be active. An existing product may retain a category or unit that is later deactivated.
+
+SKU values are normalized to uppercase and checked case-insensitively for uniqueness. Barcode values are optional and unique when supplied.
+
+Prices and reorder levels must be non-negative and support up to four decimal places.
+
+Products are activated/deactivated rather than hard-deleted.
+
+Status permissions match Angular behavior:
+
+- `product.update` — edit and reactivate
+- `product.delete` — deactivate
+
+### Product form options
+
+`GET /api/v1/products/form-options` returns active categories, active units, and the configured currency code:
+
+```json
+{
+  "categories": [],
+  "units": [],
+  "currencyCode": "AED"
+}
+```
+
+Set `CURRENCY_CODE` in the environment to change the three-letter currency code.
+
+## Categories and units
+
+Categories and units remain protected by:
+
+- `master-data.view` for reads
+- `master-data.manage` for mutations
+
+Existing master-data endpoints remain available from Group 6.
+
+## Users and access control
+
+User, role, and permission administration is protected by `user.manage`.
+
+The seed provides these system roles:
+
+- Administrator
+- Inventory Manager
+- Warehouse Staff
+- Purchasing
+- Sales
+- Viewer
+
+Set the optional `BOOTSTRAP_ADMIN_*` values before `npm run db:seed` to create the first Administrator.
 
 ## Health
 
@@ -128,6 +243,8 @@ The default page size is `25` and the maximum page size is `100`.
 GET /api/v1/health
 GET /api/v1/health/ready
 ```
+
+The readiness endpoint verifies PostgreSQL connectivity.
 
 ## Database commands
 
@@ -143,6 +260,14 @@ npm run db:reset
 ## Environment
 
 See `.env.example`.
+
+Important application settings include:
+
+```text
+API_PREFIX=api/v1
+CORS_ORIGINS=http://localhost:4200
+CURRENCY_CODE=AED
+```
 
 ## Scripts
 

@@ -38,7 +38,7 @@ export class AccessControlService {
         }
       : {};
 
-    const orderBy = this.roleOrderBy(query.sort, query.order);
+    const orderBy = this.roleOrderBy(query.sort, query.resolvedOrder);
 
     const [roles, total] = await this.prisma.$transaction([
       this.prisma.role.findMany({
@@ -203,9 +203,9 @@ export class AccessControlService {
 
     const orderBy =
       query.sort === undefined || query.sort === 'key'
-        ? { key: query.order }
+        ? { key: query.resolvedOrder }
         : query.sort === 'createdAt'
-          ? { createdAt: query.order }
+          ? { createdAt: query.resolvedOrder }
           : this.invalidSort('permissions', query.sort);
 
     const [permissions, total] = await this.prisma.$transaction([

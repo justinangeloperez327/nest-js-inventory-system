@@ -41,7 +41,7 @@ export class CategoriesService {
         : {}),
     };
 
-    const orderBy = this.orderBy(query.sort, query.order);
+    const orderBy = this.orderBy(query.sort, query.resolvedOrder);
 
     const [categories, total] = await this.prisma.$transaction([
       this.prisma.category.findMany({

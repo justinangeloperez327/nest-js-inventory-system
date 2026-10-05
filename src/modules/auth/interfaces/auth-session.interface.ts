@@ -5,5 +5,6 @@ export interface AuthSession {
   refreshToken: string;
   tokenType: 'Bearer';
   expiresIn: number;
+  expiresAt: string;
   user: AuthUser;
 }

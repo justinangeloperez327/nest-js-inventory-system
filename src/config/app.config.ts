@@ -14,4 +14,5 @@ export default registerAs('app', () => ({
   port: Number(process.env.PORT ?? 3000),
   apiPrefix: process.env.API_PREFIX ?? 'api/v1',
   corsOrigins: parseCorsOrigins(process.env.CORS_ORIGINS),
+  currencyCode: (process.env.CURRENCY_CODE ?? 'AED').toUpperCase(),
 }));

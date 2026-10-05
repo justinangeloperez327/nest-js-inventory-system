@@ -10,6 +10,7 @@ import { HealthModule } from './health/health.module.js';
 import { AccessControlModule } from './modules/access-control/access-control.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { CategoriesModule } from './modules/categories/categories.module.js';
+import { ProductsModule } from './modules/products/products.module.js';
 import { UnitsModule } from './modules/units/units.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 
@@ -31,6 +32,7 @@ import { UsersModule } from './modules/users/users.module.js';
     UsersModule,
     CategoriesModule,
     UnitsModule,
+    ProductsModule,
     HealthModule,
   ],
 })

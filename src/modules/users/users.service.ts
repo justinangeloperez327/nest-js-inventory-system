@@ -57,7 +57,7 @@ export class UsersService {
         : {}),
     };
 
-    const orderBy = this.userOrderBy(query.sort, query.order);
+    const orderBy = this.userOrderBy(query.sort, query.resolvedOrder);
 
     const [users, total] = await this.prisma.$transaction([
       this.prisma.user.findMany({
