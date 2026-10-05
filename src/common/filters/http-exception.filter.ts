@@ -8,12 +8,25 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 
+import type {
+  ApiError,
+  ApiErrorResponse,
+} from '../interfaces/api-response.interface.js';
 import type { RequestWithId } from '../types/request-with-id.type.js';
 
 interface HttpExceptionPayload {
   code?: string;
   error?: string;
   message?: string | string[];
+  fields?: Record<string, string[]>;
+  details?: unknown;
+}
+
+interface ResolvedErrorPayload {
+  code: string;
+  message: string | string[];
+  fields?: Record<string, string[]>;
+  details?: unknown;
 }
 
 @Catch()
@@ -46,22 +59,26 @@ export class HttpExceptionFilter implements ExceptionFilter {
       );
     }
 
-    response.status(statusCode).json({
-      error: {
-        code: payload.code,
-        message: payload.message,
-        statusCode,
-        path: request.originalUrl,
-        requestId: request.id,
-        timestamp: new Date().toISOString(),
-      },
-    });
+    const error: ApiError = {
+      code: payload.code,
+      message: payload.message,
+      statusCode,
+      path: request.originalUrl,
+      requestId: request.id,
+      timestamp: new Date().toISOString(),
+      ...(payload.fields ? { fields: payload.fields } : {}),
+      ...(payload.details !== undefined ? { details: payload.details } : {}),
+    };
+
+    const body: ApiErrorResponse = { error };
+
+    response.status(statusCode).json(body);
   }
 
   private resolvePayload(
     exception: unknown,
     statusCode: number,
-  ): { code: string; message: string | string[] } {
+  ): ResolvedErrorPayload {
     if (!(exception instanceof HttpException)) {
       return {
         code: 'INTERNAL_SERVER_ERROR',
@@ -79,16 +96,15 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
 
     const payload = response as HttpExceptionPayload;
-    const isValidationError =
-      statusCode === HttpStatus.BAD_REQUEST && Array.isArray(payload.message);
 
     return {
       code:
         payload.code ??
-        (isValidationError
-          ? 'VALIDATION_ERROR'
-          : this.toErrorCode(payload.error) ?? `HTTP_${statusCode}`),
+        this.toErrorCode(payload.error) ??
+        `HTTP_${statusCode}`,
       message: payload.message ?? exception.message,
+      ...(payload.fields ? { fields: payload.fields } : {}),
+      ...(payload.details !== undefined ? { details: payload.details } : {}),
     };
   }
 
