@@ -21,24 +21,28 @@ npm run start:dev
 
 Replace the example JWT secrets before using the application outside local development.
 
-The API starts at:
+## First administrator
+
+There is no public registration endpoint.
+
+To create the first administrator, set these values in `.env` before running the seed:
 
 ```text
-http://localhost:3000/api/v1
+BOOTSTRAP_ADMIN_EMAIL=admin@example.com
+BOOTSTRAP_ADMIN_PASSWORD=replace-with-a-strong-password
+BOOTSTRAP_ADMIN_FIRST_NAME=System
+BOOTSTRAP_ADMIN_LAST_NAME=Administrator
 ```
 
+Then run:
+
+```bash
+npm run db:seed
+```
+
+The seed is idempotent. It creates the permission catalog and system roles, and only creates the bootstrap user if that email does not already exist. An existing matching user is granted the Administrator role without replacing their password.
+
 ## Authentication
-
-The backend uses short-lived JWT access tokens and rotating JWT refresh tokens.
-
-Default development lifetimes:
-
-- access token: 15 minutes
-- refresh token: 7 days
-
-Refresh tokens are persisted only as Argon2id hashes and are revoked when rotated or logged out.
-
-Endpoints:
 
 ```text
 POST /api/v1/auth/login
@@ -47,35 +51,7 @@ POST /api/v1/auth/logout
 GET  /api/v1/auth/me
 ```
 
-Login request:
-
-```json
-{
-  "email": "user@example.com",
-  "password": "your-password"
-}
-```
-
-Login and refresh responses use the normal API envelope:
-
-```json
-{
-  "data": {
-    "accessToken": "...",
-    "refreshToken": "...",
-    "tokenType": "Bearer",
-    "expiresIn": 900,
-    "user": {
-      "id": "...",
-      "email": "user@example.com",
-      "firstName": "User",
-      "lastName": "Name",
-      "roles": [],
-      "permissions": []
-    }
-  }
-}
-```
+The backend uses 15-minute access JWTs and 7-day rotating refresh JWTs by default. Refresh-token proofs are stored as Argon2id hashes.
 
 Protected requests send:
 
@@ -83,21 +59,54 @@ Protected requests send:
 Authorization: Bearer <access-token>
 ```
 
-There is deliberately no public registration endpoint. User provisioning and role assignment belong to the user/authorization modules.
+## RBAC
+
+Authorization is permission-based. Roles are collections of permissions.
+
+Seeded system roles:
+
+- Administrator
+- Inventory Manager
+- Warehouse Staff
+- Purchasing
+- Sales
+- Viewer
+
+System roles are application-managed and immutable through the API. Custom roles can be created and assigned any permissions from the catalog.
+
+Permission changes take effect on the next request because authenticated user permissions are loaded from the database by the access-token guard.
+
+### User management
+
+```text
+GET   /api/v1/users
+GET   /api/v1/users/:id
+POST  /api/v1/users
+PATCH /api/v1/users/:id
+PATCH /api/v1/users/:id/status
+PUT   /api/v1/users/:id/roles
+PUT   /api/v1/users/:id/password
+```
+
+User passwords require at least 12 characters. Deactivating a user or resetting their password revokes all active refresh tokens.
+
+### Role and permission management
+
+```text
+GET    /api/v1/roles
+GET    /api/v1/roles/:id
+POST   /api/v1/roles
+PATCH  /api/v1/roles/:id
+PUT    /api/v1/roles/:id/permissions
+DELETE /api/v1/roles/:id
+GET    /api/v1/permissions
+```
+
+Permissions themselves are read-only runtime data. They are defined by the application so permission names do not drift away from the code that enforces them.
 
 ## API contract
 
-Successful single-resource responses use:
-
-```json
-{
-  "data": {
-    "id": "..."
-  }
-}
-```
-
-Paginated collections use:
+Successful single-resource responses use `{ "data": ... }`. Paginated collections use:
 
 ```json
 {
@@ -111,15 +120,7 @@ Paginated collections use:
 }
 ```
 
-The default page size is `25` and the maximum accepted page size is `100`.
-
-Standard list queries support:
-
-```text
-?page=1&pageSize=25&search=laptop&sort=name&order=asc
-```
-
-Validation failures are field-addressable and all errors include a stable code, status, request ID, path, and timestamp.
+The default page size is `25`, maximum page size is `100`, and standard list queries support `page`, `pageSize`, `search`, `sort`, and `order`.
 
 ## Health
 
@@ -130,13 +131,7 @@ GET /api/v1/health/ready
 
 The readiness endpoint verifies PostgreSQL connectivity.
 
-## Database
-
-The project uses Prisma ORM with PostgreSQL.
-
-The database foundation includes users, roles, permissions, refresh tokens, categories, units, products, warehouses, per-warehouse inventory balances, system settings, and audit logs.
-
-### Database commands
+## Database commands
 
 ```bash
 npm run db:generate
@@ -147,33 +142,11 @@ npm run db:studio
 npm run db:reset
 ```
 
-Use `db:migrate` when developing schema changes. Use `db:migrate:deploy` in deployed environments.
-
 Generated Prisma Client code lives under `src/generated/prisma` and is regenerated during `npm install`.
-
-## Foundation
-
-The application includes:
-
-- environment-aware configuration
-- `/api/v1` global API prefix
-- Angular development CORS configuration
-- global DTO validation and transformation
-- standardized success and error responses
-- reusable pagination/list query DTOs and pagination helpers
-- request IDs via `X-Request-Id`
-- structured HTTP request logging
-- graceful shutdown hooks
-- liveness and database-readiness endpoints
-- PostgreSQL/Prisma database module
-- migration and seed infrastructure
-- JWT authentication with rotating refresh tokens
 
 ## Environment
 
 See `.env.example`.
-
-`CORS_ORIGINS` accepts a comma-separated list when multiple Angular origins are required.
 
 ## Scripts
 

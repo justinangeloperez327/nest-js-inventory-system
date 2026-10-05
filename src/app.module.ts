@@ -7,7 +7,9 @@ import databaseConfig from './config/database.config.js';
 import { validateEnvironment } from './config/environment.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
+import { AccessControlModule } from './modules/access-control/access-control.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
+import { UsersModule } from './modules/users/users.module.js';
 
 @Module({
   imports: [
@@ -23,6 +25,8 @@ import { AuthModule } from './modules/auth/auth.module.js';
     }),
     DatabaseModule,
     AuthModule,
+    AccessControlModule,
+    UsersModule,
     HealthModule,
   ],
 })
