@@ -22,10 +22,10 @@ The application starts on `http://localhost:3000` by default.
 npm run build
 npm run start
 npm run start:dev
+npm run start:debug
+npm run start:prod
 npm run lint
 npm run format
-npm run test
-npm run test:e2e
 ```
 
 ## Stack
@@ -33,6 +33,5 @@ npm run test:e2e
 - NestJS 12
 - TypeScript
 - Express
-- Vitest
 - OXLint
 - Prettier
