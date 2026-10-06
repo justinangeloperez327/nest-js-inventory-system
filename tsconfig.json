@@ -19,6 +19,7 @@
     "strict": true,
     "types": [
       "node"
-    ]
+    ],
+    "rewriteRelativeImportExtensions": true
   }
 }
