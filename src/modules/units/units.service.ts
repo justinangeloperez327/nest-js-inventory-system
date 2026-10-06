@@ -10,6 +10,7 @@ import {
   toPaginatedResult,
   toPaginationWindow,
 } from '../../common/utils/pagination.util.js';
+import { prismaContainsSearch } from '../../common/utils/query-search.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { UnitListQueryDto } from './dto/unit-list-query.dto.js';
@@ -25,7 +26,10 @@ export class UnitsService {
 
   async list(query: UnitListQueryDto) {
     const { skip, take } = toPaginationWindow(query);
-    const search = query.search?.trim();
+    const search =
+      prismaContainsSearch(
+        query.search,
+      );
 
     const where = {
       ...(query.active !== undefined
@@ -63,10 +67,13 @@ export class UnitsService {
           where,
           skip,
           take,
-          orderBy: this.orderBy(
-            query.sort,
-            query.resolvedOrder,
-          ),
+          orderBy: [
+            this.orderBy(
+              query.sort,
+              query.resolvedOrder,
+            ),
+            { id: 'asc' as const },
+          ],
         }),
         this.prisma.unit.count({ where }),
       ]);

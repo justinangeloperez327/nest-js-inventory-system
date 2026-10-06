@@ -11,6 +11,12 @@ import {
   toPaginatedResult,
   toPaginationWindow,
 } from '../../common/utils/pagination.util.js';
+import {
+  assertQueryDateRange,
+  parseQueryDate,
+  queryDateToExclusive,
+} from '../../common/utils/query-date.util.js';
+import { prismaContainsSearch } from '../../common/utils/query-search.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -109,20 +115,27 @@ export class InventoryTransfersService {
 
   async list(query: InventoryTransferQueryDto) {
     this.assertSort(query.sort);
-    this.assertDateRange(
+    assertQueryDateRange(
       query.dateFrom,
       query.dateTo,
     );
 
     const { skip, take } =
       toPaginationWindow(query);
-    const search = query.search?.trim();
-    const dateFrom = this.resolveDateFrom(
-      query.dateFrom,
-    );
-    const dateTo = this.resolveDateToExclusive(
-      query.dateTo,
-    );
+    const search =
+      prismaContainsSearch(
+        query.search,
+      );
+    const dateFrom =
+      parseQueryDate(
+        query.dateFrom,
+        'dateFrom',
+      );
+    const dateTo =
+      queryDateToExclusive(
+        query.dateTo,
+        'dateTo',
+      );
 
     const where = {
       ...(query.sourceWarehouseId
@@ -231,10 +244,13 @@ export class InventoryTransfersService {
           where,
           skip,
           take,
-          orderBy: this.orderBy(
-            query.sort,
-            query.resolvedOrder,
-          ),
+          orderBy: [
+            this.orderBy(
+              query.sort,
+              query.resolvedOrder,
+            ),
+            { id: 'asc' as const },
+          ],
           include: {
             sourceWarehouse: {
               select: {
@@ -385,7 +401,10 @@ export class InventoryTransfersService {
       });
     }
 
-    const search = query.search.trim();
+    const search =
+      prismaContainsSearch(
+        query.search,
+      )!;
     const balances =
       await this.prisma.inventoryItem.findMany({
         where: {

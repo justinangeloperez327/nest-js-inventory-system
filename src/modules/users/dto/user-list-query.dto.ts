@@ -1,19 +1,23 @@
-import { Transform } from 'class-transformer';
-import { IsBoolean, IsOptional, IsUUID } from 'class-validator';
+import {
+  IsBoolean,
+  IsOptional,
+  IsUUID,
+} from 'class-validator';
 
 import { ListQueryDto } from '../../../common/dto/list-query.dto.js';
+import {
+  BooleanQuery,
+  OptionalTrimQueryString,
+} from '../../../common/transforms/query.transforms.js';
 
 export class UserListQueryDto extends ListQueryDto {
   @IsOptional()
-  @Transform(({ value }) => {
-    if (value === 'true' || value === true) return true;
-    if (value === 'false' || value === false) return false;
-    return value;
-  })
+  @BooleanQuery()
   @IsBoolean()
   isActive?: boolean;
 
   @IsOptional()
+  @OptionalTrimQueryString()
   @IsUUID('4')
   roleId?: string;
 }

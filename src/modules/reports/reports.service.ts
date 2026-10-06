@@ -6,6 +6,12 @@ import {
 
 import { ApiException } from '../../common/exceptions/api.exception.js';
 import { createPaginationMeta } from '../../common/utils/pagination.util.js';
+import {
+  assertQueryDateRange,
+  parseQueryDate,
+  queryDateToExclusive,
+} from '../../common/utils/query-date.util.js';
+import { sqlContainsPattern } from '../../common/utils/query-search.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import {
@@ -279,7 +285,7 @@ export class ReportsService {
   private params(
     query: ReportQueryDto,
   ): ReportParams {
-    this.assertDateRange(
+    assertQueryDateRange(
       query.dateFrom,
       query.dateTo,
     );
@@ -294,23 +300,19 @@ export class ReportsService {
             ]
           : null,
       dateFrom:
-        query.dateFrom
-          ? this.parseDate(
-              query.dateFrom,
-            )
-          : null,
+        parseQueryDate(
+          query.dateFrom,
+          'dateFrom',
+        ),
       dateTo:
-        query.dateTo
-          ? this.dateToExclusive(
-              query.dateTo,
-            )
-          : null,
+        queryDateToExclusive(
+          query.dateTo,
+          'dateTo',
+        ),
       searchPattern:
-        query.search?.trim()
-          ? '%' +
-            query.search.trim() +
-            '%'
-          : null,
+        sqlContainsPattern(
+          query.search,
+        ),
     };
   }
 

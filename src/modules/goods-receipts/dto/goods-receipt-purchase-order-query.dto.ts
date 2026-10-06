@@ -1,4 +1,3 @@
-import { Type } from 'class-transformer';
 import {
   IsInt,
   IsString,
@@ -8,13 +7,19 @@ import {
   MinLength,
 } from 'class-validator';
 
+import {
+  StrictIntegerQuery,
+  TrimQueryString,
+} from '../../../common/transforms/query.transforms.js';
+
 export class GoodsReceiptPurchaseOrderQueryDto {
+  @TrimQueryString()
   @IsString()
   @MinLength(2)
   @MaxLength(100)
   search!: string;
 
-  @Type(() => Number)
+  @StrictIntegerQuery()
   @IsInt()
   @Min(1)
   @Max(20)

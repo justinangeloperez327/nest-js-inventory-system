@@ -7,6 +7,7 @@ import {
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto.js';
 import { ApiException } from '../../common/exceptions/api.exception.js';
 import { toPaginatedResult } from '../../common/utils/pagination.util.js';
+import { sqlContainsPattern } from '../../common/utils/query-search.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import {
   type InventoryStockStatus,
@@ -310,10 +311,10 @@ export class InventoryService {
   ) {
     this.assertSort(input.sort);
 
-    const search = input.search?.trim();
-    const searchPattern = search
-      ? '%' + search + '%'
-      : null;
+    const searchPattern =
+      sqlContainsPattern(
+        input.search,
+      );
     const productId = input.productId ?? null;
     const warehouseId = input.warehouseId ?? null;
     const status = input.status ?? null;

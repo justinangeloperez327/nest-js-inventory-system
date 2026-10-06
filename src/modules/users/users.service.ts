@@ -10,6 +10,7 @@ import {
   toPaginatedResult,
   toPaginationWindow,
 } from '../../common/utils/pagination.util.js';
+import { prismaContainsSearch } from '../../common/utils/query-search.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import { SystemRole } from '../access-control/rbac.constants.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -31,7 +32,10 @@ export class UsersService {
 
   async list(query: UserListQueryDto) {
     const { skip, take } = toPaginationWindow(query);
-    const search = query.search?.trim();
+    const search =
+      prismaContainsSearch(
+        query.search,
+      );
 
     const where = {
       ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
@@ -59,7 +63,13 @@ export class UsersService {
         : {}),
     };
 
-    const orderBy = this.userOrderBy(query.sort, query.resolvedOrder);
+    const orderBy = [
+      this.userOrderBy(
+        query.sort,
+        query.resolvedOrder,
+      ),
+      { id: 'asc' as const },
+    ];
 
     const [users, total] = await this.prisma.$transaction([
       this.prisma.user.findMany({

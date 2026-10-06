@@ -9,6 +9,12 @@ import { randomUUID } from 'node:crypto';
 
 import { ApiException } from '../../common/exceptions/api.exception.js';
 import { toPaginatedResult } from '../../common/utils/pagination.util.js';
+import {
+  assertQueryDateRange,
+  parseQueryDate,
+  queryDateToExclusive,
+} from '../../common/utils/query-date.util.js';
+import { sqlContainsPattern } from '../../common/utils/query-search.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { SettingsService } from '../settings/settings.service.js';
@@ -284,21 +290,34 @@ export class StockMovementsService {
 
   async list(query: StockMovementQueryDto) {
     this.assertSort(query.sort);
-    this.assertDateRange(query.dateFrom, query.dateTo);
+    assertQueryDateRange(
+      query.dateFrom,
+      query.dateTo,
+    );
 
     const productId = query.productId ?? null;
     const warehouseId = query.warehouseId ?? null;
     const dbType = query.type
       ? STOCK_MOVEMENT_DB_TYPE[query.type]
       : null;
-    const dateFrom = this.resolveDateFrom(query.dateFrom);
-    const dateTo = this.resolveDateToExclusive(query.dateTo);
-    const referencePattern = query.reference?.trim()
-      ? '%' + query.reference.trim() + '%'
-      : null;
-    const searchPattern = query.search?.trim()
-      ? '%' + query.search.trim() + '%'
-      : null;
+    const dateFrom =
+      parseQueryDate(
+        query.dateFrom,
+        'dateFrom',
+      );
+    const dateTo =
+      queryDateToExclusive(
+        query.dateTo,
+        'dateTo',
+      );
+    const referencePattern =
+      sqlContainsPattern(
+        query.reference,
+      );
+    const searchPattern =
+      sqlContainsPattern(
+        query.search,
+      );
     const sort = query.sort ?? 'occurredAt';
     const offset = (query.page - 1) * query.pageSize;
 

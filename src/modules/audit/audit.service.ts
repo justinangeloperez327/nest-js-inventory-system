@@ -11,6 +11,12 @@ import {
   toPaginatedResult,
   toPaginationWindow,
 } from '../../common/utils/pagination.util.js';
+import {
+  assertQueryDateRange,
+  parseQueryDate,
+  queryDateToExclusive,
+} from '../../common/utils/query-date.util.js';
+import { prismaContainsSearch } from '../../common/utils/query-search.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import type { AuditLogQueryDto } from './dto/audit-log-query.dto.js';
@@ -40,20 +46,27 @@ export class AuditService {
 
   async list(query: AuditLogQueryDto) {
     this.assertSort(query.sort);
-    this.assertDateRange(
+    assertQueryDateRange(
       query.dateFrom,
       query.dateTo,
     );
 
     const { skip, take } =
       toPaginationWindow(query);
-    const search = query.search?.trim();
-    const dateFrom = query.dateFrom
-      ? this.parseDate(query.dateFrom)
-      : undefined;
-    const dateTo = query.dateTo
-      ? this.dateToExclusive(query.dateTo)
-      : undefined;
+    const search =
+      prismaContainsSearch(
+        query.search,
+      );
+    const dateFrom =
+      parseQueryDate(
+        query.dateFrom,
+        'dateFrom',
+      ) ?? undefined;
+    const dateTo =
+      queryDateToExclusive(
+        query.dateTo,
+        'dateTo',
+      ) ?? undefined;
 
     const where: Prisma.AuditLogWhereInput = {
       ...(query.userId
@@ -547,6 +560,7 @@ export class AuditService {
         return [
           { action: direction },
           { createdAt: 'desc' },
+          { id: 'asc' },
         ];
       case 'entityType':
         return [
@@ -554,6 +568,7 @@ export class AuditService {
             entityType: direction,
           },
           { createdAt: 'desc' },
+          { id: 'asc' },
         ];
       default:
         throw new Error(

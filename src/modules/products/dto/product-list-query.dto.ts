@@ -1,4 +1,3 @@
-import { Transform } from 'class-transformer';
 import {
   IsBoolean,
   IsOptional,
@@ -6,22 +5,24 @@ import {
 } from 'class-validator';
 
 import { ListQueryDto } from '../../../common/dto/list-query.dto.js';
+import {
+  BooleanQuery,
+  OptionalTrimQueryString,
+} from '../../../common/transforms/query.transforms.js';
 
 export class ProductListQueryDto extends ListQueryDto {
   @IsOptional()
+  @OptionalTrimQueryString()
   @IsUUID('4')
   categoryId?: string;
 
   @IsOptional()
+  @OptionalTrimQueryString()
   @IsUUID('4')
   unitId?: string;
 
   @IsOptional()
-  @Transform(({ value }) => {
-    if (value === 'true' || value === true) return true;
-    if (value === 'false' || value === false) return false;
-    return value;
-  })
+  @BooleanQuery()
   @IsBoolean()
   active?: boolean;
 }

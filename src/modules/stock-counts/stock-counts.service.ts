@@ -8,6 +8,12 @@ import {
 
 import { ApiException } from '../../common/exceptions/api.exception.js';
 import { toPaginatedResult } from '../../common/utils/pagination.util.js';
+import {
+  assertQueryDateRange,
+  parseQueryDate,
+  queryDateToExclusive,
+} from '../../common/utils/query-date.util.js';
+import { sqlContainsPattern } from '../../common/utils/query-search.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -278,7 +284,7 @@ export class StockCountsService {
 
   async list(query: StockCountQueryDto) {
     this.assertSort(query.sort);
-    this.assertDateRange(
+    assertQueryDateRange(
       query.dateFrom,
       query.dateTo,
     );
@@ -291,15 +297,19 @@ export class StockCountsService {
         ]
       : null;
     const dateFrom =
-      this.resolveDateFrom(query.dateFrom);
+      parseQueryDate(
+        query.dateFrom,
+        'dateFrom',
+      );
     const dateTo =
-      this.resolveDateToExclusive(
+      queryDateToExclusive(
         query.dateTo,
+        'dateTo',
       );
     const searchPattern =
-      query.search?.trim()
-        ? '%' + query.search.trim() + '%'
-        : null;
+      sqlContainsPattern(
+        query.search,
+      );
     const sort = query.sort ?? 'createdAt';
     const offset =
       (query.page - 1) * query.pageSize;
@@ -404,9 +414,9 @@ export class StockCountsService {
     this.assertLineSort(query.sort);
 
     const searchPattern =
-      query.search?.trim()
-        ? '%' + query.search.trim() + '%'
-        : null;
+      sqlContainsPattern(
+        query.search,
+      );
     const varianceOnly =
       query.varianceOnly === true;
     const sort =

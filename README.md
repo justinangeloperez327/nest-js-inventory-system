@@ -211,7 +211,7 @@ Status permissions match Angular behavior:
 }
 ```
 
-Set `CURRENCY_CODE` in the environment to change the three-letter currency code.
+The current currency is managed through Application Settings. `CURRENCY_CODE` remains a bootstrap default for databases whose currency setting has not yet been managed through the Settings API.
 
 ## Master data
 
@@ -2424,6 +2424,80 @@ stockCountConcurrencyPolicy  freeze
 Existing configured keys are preserved by the migration.
 
 When `npm run db:seed` is run, `ORGANIZATION_NAME`, `TIMEZONE`, and `CURRENCY_CODE` may bootstrap their corresponding database values only while those settings have never been updated through the Settings API. Once an authenticated settings update records an updating user, later seeds do not overwrite that API-managed value.
+
+## Query hardening
+
+Group 23 standardizes search, filter, sort, and pagination behavior across list, lookup, audit, stock-ledger, stock-count, and reporting endpoints.
+
+### Query normalization
+
+Query strings are normalized before validation:
+
+- optional string filters are trimmed
+- blank optional filters are treated as omitted
+- lookup search terms are trimmed before minimum-length validation
+- booleans accept only `true` or `false`
+- numeric query parameters accept decimal integer text only
+- repeated/array query values remain invalid instead of being silently coerced into strings
+
+The query transforms inspect the original request value rather than the value produced by global implicit conversion. This prevents values such as repeated parameters or non-standard numeric syntax from bypassing the intended DTO validation.
+
+### Pagination
+
+Paginated endpoints enforce:
+
+```text
+page      1 .. 1,000,000
+pageSize  1 .. 100
+```
+
+The existing default page size remains 25 when the client does not send `pageSize`.
+
+Prisma-backed paginated resources use a stable `id` tie-breaker after the requested sort. Raw-SQL lists and reports already include deterministic ID tie-breakers. This prevents duplicate or skipped rows between adjacent pages when several records have the same primary sort value.
+
+### Search semantics
+
+Search remains case-insensitive, but user input is treated as literal text.
+
+The characters:
+
+```text
+%
+_
+\
+```
+
+are escaped before being passed to Prisma `contains` filters or PostgreSQL `ILIKE` patterns. They therefore no longer behave as accidental SQL wildcard controls.
+
+All raw SQL search values continue to be supplied as bind parameters. Sort expressions are never taken directly from user input: resource services map approved sort names explicitly, and reports resolve sort names through the static report specification.
+
+### Date filters
+
+Date-range parsing is centralized.
+
+Inventory movement, stock-count, audit, and report filters accept valid ISO dates/timestamps. A date-only upper bound is treated as the end of that calendar date by converting it to an exclusive next-day boundary.
+
+Purchase-order, goods-receipt, and sales-order business-date filters continue to require valid `YYYY-MM-DD` calendar dates.
+
+For every range:
+
+```text
+dateFrom <= dateTo
+```
+
+Invalid calendar dates and reversed ranges return a validation-style HTTP 400 response.
+
+### Filter validation
+
+Typed filters remain constrained at the DTO boundary:
+
+- entity IDs use UUID v4 validation
+- statuses and movement types use explicit enum/value sets
+- stock booleans use strict boolean parsing
+- search and reference strings retain bounded lengths
+- unknown query properties are rejected by the global validation pipe
+
+The earlier `order` sort-direction parameter remains supported as a compatibility alias; `direction` remains the preferred Angular contract.
 
 ## Users and access control
 

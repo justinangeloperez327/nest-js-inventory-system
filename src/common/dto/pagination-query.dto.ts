@@ -1,16 +1,20 @@
-import { Type } from 'class-transformer';
 import { IsInt, Max, Min } from 'class-validator';
+
+import { StrictIntegerQuery } from '../transforms/query.transforms.js';
 
 export const DEFAULT_PAGE_SIZE = 25;
 export const MAX_PAGE_SIZE = 100;
+export const MAX_PAGE_NUMBER =
+  1_000_000;
 
 export class PaginationQueryDto {
-  @Type(() => Number)
+  @StrictIntegerQuery()
   @IsInt()
   @Min(1)
+  @Max(MAX_PAGE_NUMBER)
   page = 1;
 
-  @Type(() => Number)
+  @StrictIntegerQuery()
   @IsInt()
   @Min(1)
   @Max(MAX_PAGE_SIZE)

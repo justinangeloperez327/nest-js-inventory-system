@@ -11,6 +11,12 @@ import {
   toPaginatedResult,
   toPaginationWindow,
 } from '../../common/utils/pagination.util.js';
+import {
+  assertDateOnlyQueryRange,
+  dateOnlyToExclusive,
+  parseDateOnlyQuery,
+} from '../../common/utils/query-date.util.js';
+import { prismaContainsSearch } from '../../common/utils/query-search.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import type { Prisma } from '../../generated/prisma/client.js';
@@ -158,29 +164,28 @@ export class SalesOrdersService {
 
   async list(query: SalesOrderQueryDto) {
     this.assertSort(query.sort);
-    this.assertDateRange(
+    assertDateOnlyQueryRange(
       query.dateFrom,
       query.dateTo,
     );
 
     const { skip, take } =
       toPaginationWindow(query);
-    const search = query.search?.trim();
+    const search =
+      prismaContainsSearch(
+        query.search,
+      );
     const dateFrom = query.dateFrom
-      ? this.parseDateOnly(
+      ? parseDateOnlyQuery(
           query.dateFrom,
           'dateFrom',
         )
       : null;
-    const dateTo = query.dateTo
-      ? this.addDays(
-          this.parseDateOnly(
-            query.dateTo,
-            'dateTo',
-          ),
-          1,
-        )
-      : null;
+    const dateTo =
+      dateOnlyToExclusive(
+        query.dateTo,
+        'dateTo',
+      );
 
     const where = {
       ...(query.customerId
@@ -283,10 +288,13 @@ export class SalesOrdersService {
           where,
           skip,
           take,
-          orderBy: this.orderBy(
-            query.sort,
-            query.resolvedOrder,
-          ),
+          orderBy: [
+            this.orderBy(
+              query.sort,
+              query.resolvedOrder,
+            ),
+            { id: 'asc' as const },
+          ],
           include: {
             customer: {
               select: {
@@ -472,7 +480,10 @@ export class SalesOrdersService {
   async customerOptions(
     query: SalesOrderLookupQueryDto,
   ) {
-    const search = query.search.trim();
+    const search =
+      prismaContainsSearch(
+        query.search,
+      )!;
 
     return this.prisma.customer.findMany({
       where: {
@@ -572,7 +583,10 @@ export class SalesOrdersService {
       });
     }
 
-    const search = query.search.trim();
+    const search =
+      prismaContainsSearch(
+        query.search,
+      )!;
     const balances =
       await this.prisma.inventoryItem.findMany({
         where: {
