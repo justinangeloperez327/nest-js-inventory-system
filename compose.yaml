@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-inventory}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-inventory}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -19,6 +19,80 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 5s
+
+  migrate:
+    build:
+      context: .
+      target: migration
+    image: nest-js-inventory-system:migration
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-inventory}:${POSTGRES_PASSWORD:-inventory}@postgres:5432/${POSTGRES_DB:-inventory}?schema=public
+      CURRENCY_CODE: ${CURRENCY_CODE:-AED}
+      ORGANIZATION_NAME: ${ORGANIZATION_NAME:-Inventory System}
+      TIMEZONE: ${TIMEZONE:-UTC}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      BOOTSTRAP_ADMIN_FIRST_NAME: ${BOOTSTRAP_ADMIN_FIRST_NAME:-System}
+      BOOTSTRAP_ADMIN_LAST_NAME: ${BOOTSTRAP_ADMIN_LAST_NAME:-Administrator}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  app:
+    build:
+      context: .
+      target: runtime
+    image: nest-js-inventory-system:local
+    init: true
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      APP_NAME: ${APP_NAME:-NestJS Inventory System}
+      HOST: 0.0.0.0
+      PORT: ${PORT:-3000}
+      API_PREFIX: ${API_PREFIX:-api/v1}
+      OPENAPI_ENABLED: ${OPENAPI_ENABLED:-true}
+      OPENAPI_PATH: ${OPENAPI_PATH:-docs}
+      OPENAPI_VERSION: ${OPENAPI_VERSION:-1.0.0}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4200}
+      CURRENCY_CODE: ${CURRENCY_CODE:-AED}
+      ORGANIZATION_NAME: ${ORGANIZATION_NAME:-Inventory System}
+      TIMEZONE: ${TIMEZONE:-UTC}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-inventory}:${POSTGRES_PASSWORD:-inventory}@postgres:5432/${POSTGRES_DB:-inventory}?schema=public
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Set JWT_ACCESS_SECRET in .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Set JWT_REFRESH_SECRET in .env}
+      JWT_ACCESS_TTL_SECONDS: ${JWT_ACCESS_TTL_SECONDS:-900}
+      JWT_REFRESH_TTL_SECONDS: ${JWT_REFRESH_TTL_SECONDS:-604800}
+      JWT_ISSUER: ${JWT_ISSUER:-nest-js-inventory-system}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-angular-inventory-system}
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const p=(process.env.API_PREFIX||'api/v1').replace(/^\\/+|\\/+$/g,''); fetch('http://127.0.0.1:'+(process.env.PORT||'3000')+'/'+p+'/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
   postgres_data:

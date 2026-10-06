@@ -27,6 +27,68 @@ The default API prefix is:
 
 The Angular application should therefore use `/api/v1` as its API base URL when the frontend and backend are connected directly.
 
+## Docker
+
+The backend can run as a complete Docker Compose stack with the API, PostgreSQL 18, and a one-shot migration/seed service.
+
+First create the local environment file:
+
+```bash
+cp .env.example .env
+```
+
+Change the JWT secrets in `.env` before using the stack outside local development.
+
+Start everything:
+
+```bash
+docker compose up --build -d
+```
+
+Compose starts services in this order:
+
+```text
+PostgreSQL healthy
+      ↓
+Prisma migrations
+      ↓
+database seed
+      ↓
+NestJS API
+      ↓
+readiness health check
+```
+
+Default endpoints:
+
+```text
+API       http://localhost:3000/api/v1
+Health    http://localhost:3000/api/v1/health/ready
+Swagger   http://localhost:3000/api/v1/docs
+OpenAPI   http://localhost:3000/api/v1/docs/openapi.json
+```
+
+Useful commands:
+
+```bash
+npm run docker:build
+npm run docker:up
+npm run docker:logs
+npm run docker:down
+```
+
+The PostgreSQL data directory is persisted in the `postgres_data` named volume. `docker compose down` keeps the database; use `docker compose down -v` only when you intentionally want to delete local database data.
+
+The production `runtime` image is multi-stage and contains only production Node dependencies plus the compiled `dist/` output. The API runs as the non-root Node user, uses a read-only root filesystem in Compose, drops Linux capabilities, and exposes an application readiness health check.
+
+A standalone production image can be built with:
+
+```bash
+docker build --target runtime -t nest-js-inventory-system .
+```
+
+When the image is deployed without Compose, run the Prisma migrations separately before starting the API container. The Compose stack handles this automatically through its dedicated `migrate` service.
+
 ## Angular API contract
 
 Successful resource endpoints return the resource body directly.
@@ -2574,6 +2636,10 @@ npm run test:cov
 npm run test:e2e
 npm run check
 npm run ci
+npm run docker:build
+npm run docker:up
+npm run docker:down
+npm run docker:logs
 ```
 
 `npm run check` now runs linting, the production Nest build, and the complete automated test suite.
@@ -2621,9 +2687,11 @@ verify /api/v1/docs/openapi.json
 
 This catches migration, seed, startup, database-connectivity, readiness, and generated OpenAPI failures that database-independent unit tests cannot detect.
 
+A separate Docker Compose smoke test validates the multi-stage Docker build, Compose dependency ordering, containerized migrations/seeding, container health, readiness endpoint, and OpenAPI endpoint.
+
 ### Delivery artifact
 
-After both quality jobs pass on a non-PR run, CI publishes a deployment-ready build artifact containing:
+After the quality, PostgreSQL smoke, and Docker Compose smoke jobs pass on a non-PR run, CI publishes a deployment-ready build artifact containing:
 
 ```text
 dist/
