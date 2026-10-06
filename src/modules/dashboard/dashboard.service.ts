@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
 import { PrismaService } from '../../database/prisma.service.js';
+import { SettingsService } from '../settings/settings.service.js';
 import { Permission } from '../access-control/rbac.constants.js';
 import type { AuthUser } from '../auth/interfaces/auth-user.interface.js';
 import { STOCK_MOVEMENT_API_TYPE } from '../stock-movements/stock-movement.types.js';
@@ -233,7 +233,7 @@ const RECENT_MOVEMENTS_QUERY = [
 export class DashboardService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
+    private readonly settings: SettingsService,
   ) {}
 
   async getDashboard(user: AuthUser) {
@@ -266,6 +266,10 @@ export class DashboardService {
           await tx.$queryRawUnsafe<
             MetricsRow[]
           >(METRICS_QUERY);
+        const currencyCode =
+          await this.settings.currencyCodeInTransaction(
+            tx,
+          );
         const metrics =
           metricsRows[0] ??
           this.emptyMetrics();
@@ -321,8 +325,7 @@ export class DashboardService {
             inventoryValue: Number(
               metrics.inventoryValue,
             ),
-            currencyCode:
-              this.currencyCode(),
+            currencyCode,
           },
           stockRisks: stockRisks.map(
             (row) => ({
@@ -446,13 +449,6 @@ export class DashboardService {
     };
   }
 
-  private currencyCode(): string {
-    return (
-      this.config.get<string>(
-        'app.currencyCode',
-      ) ?? 'AED'
-    );
-  }
 
   private dateOnly(date: Date): string {
     return date

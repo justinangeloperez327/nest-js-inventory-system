@@ -5,7 +5,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
 import { ApiException } from '../../common/exceptions/api.exception.js';
 import {
@@ -13,6 +12,7 @@ import {
   toPaginationWindow,
 } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
+import { SettingsService } from '../settings/settings.service.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
 import { StockMovementsService } from '../stock-movements/stock-movements.service.js';
@@ -151,7 +151,7 @@ const MAX_DECIMAL_19_4_SCALED =
 export class SalesOrdersService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
+    private readonly settings: SettingsService,
     private readonly movements: StockMovementsService,
     private readonly audit: AuditService,
   ) {}
@@ -464,7 +464,8 @@ export class SalesOrdersService {
 
     return {
       warehouses,
-      currencyCode: this.currencyCode(),
+      currencyCode:
+        await this.settings.currencyCode(),
     };
   }
 
@@ -690,7 +691,9 @@ export class SalesOrdersService {
               notes: dto.notes ?? null,
               subtotal: prepared.subtotal,
               currencyCode:
-                this.currencyCode(),
+                await this.settings.currencyCodeInTransaction(
+                  tx,
+                ),
               createdByUserId: userId,
               lines: {
                 create:
@@ -2336,13 +2339,6 @@ export class SalesOrdersService {
     }
   }
 
-  private currencyCode(): string {
-    return (
-      this.config.get<string>(
-        'app.currencyCode',
-      ) ?? 'AED'
-    );
-  }
 
   private orderBy(
     sort: string | undefined,

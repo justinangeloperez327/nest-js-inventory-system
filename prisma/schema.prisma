@@ -19,6 +19,7 @@ model User {
   updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
   roles         UserRole[]
   auditLogs     AuditLog[]
+  updatedSettings SystemSetting[] @relation("SystemSettingUpdatedBy")
   refreshTokens               RefreshToken[]
   stockMovements              StockMovement[]
   createdInventoryAdjustments InventoryAdjustment[] @relation("InventoryAdjustmentCreatedBy")
@@ -204,12 +205,15 @@ model InventoryItem {
 }
 
 model SystemSetting {
-  id        String   @id @default(uuid()) @db.Uuid
-  key       String   @unique
-  value     Json
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id              String   @id @default(uuid()) @db.Uuid
+  key             String   @unique
+  value           Json
+  updatedByUserId String?  @map("updated_by_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedBy       User?    @relation("SystemSettingUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
 
+  @@index([updatedByUserId])
   @@map("system_settings")
 }
 
@@ -681,6 +685,7 @@ model StockCount {
   warehouseId       String           @map("warehouse_id") @db.Uuid
   notes             String?
   status            StockCountStatus @default(DRAFT)
+  concurrencyPolicy String           @default("freeze") @map("concurrency_policy")
   createdByUserId   String           @map("created_by_user_id") @db.Uuid
   startedByUserId   String?          @map("started_by_user_id") @db.Uuid
   submittedByUserId String?          @map("submitted_by_user_id") @db.Uuid
@@ -713,6 +718,8 @@ model StockCountLine {
   productId          String        @map("product_id") @db.Uuid
   expectedQuantity   Decimal       @map("expected_quantity") @db.Decimal(19, 4)
   countedQuantity    Decimal?      @map("counted_quantity") @db.Decimal(19, 4)
+  countedAt           DateTime?     @map("counted_at") @db.Timestamptz(3)
+  quantityAtCount      Decimal?      @map("quantity_at_count") @db.Decimal(19, 4)
   varianceQuantity   Decimal?      @map("variance_quantity") @db.Decimal(19, 4)
   snapshotUnitCost   Decimal       @map("snapshot_unit_cost") @db.Decimal(19, 4)
   balanceBefore      Decimal?      @map("balance_before") @db.Decimal(19, 4)

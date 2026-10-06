@@ -4,7 +4,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
 import { ApiException } from '../../common/exceptions/api.exception.js';
 import {
@@ -13,6 +12,7 @@ import {
 } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { SettingsService } from '../settings/settings.service.js';
 import type { ProductListQueryDto } from './dto/product-list-query.dto.js';
 import type { ProductStatusDto } from './dto/product-status.dto.js';
 import type { ProductUpsertDto } from './dto/product-upsert.dto.js';
@@ -43,8 +43,8 @@ interface ProductRecord {
 export class ProductsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
     private readonly audit: AuditService,
+    private readonly settings: SettingsService,
   ) {}
 
   async list(query: ProductListQueryDto) {
@@ -127,7 +127,8 @@ export class ProductsService {
     return {
       categories,
       units,
-      currencyCode: this.currencyCode(),
+      currencyCode:
+        await this.settings.currencyCode(),
     };
   }
 
@@ -141,7 +142,10 @@ export class ProductsService {
       throw this.notFound();
     }
 
-    return this.toDetail(product as ProductRecord);
+    return this.toDetail(
+      product as ProductRecord,
+      await this.settings.currencyCode(),
+    );
   }
 
   async create(
@@ -188,6 +192,9 @@ export class ProductsService {
             const after =
               this.toDetail(
                 created as ProductRecord,
+                await this.settings.currencyCodeInTransaction(
+                  tx,
+                ),
               );
 
             await this.audit.recordInTransaction(
@@ -207,7 +214,10 @@ export class ProductsService {
           },
         );
 
-      return this.toDetail(product as ProductRecord);
+      return this.toDetail(
+        product as ProductRecord,
+        await this.settings.currencyCode(),
+      );
     } catch (error) {
       this.rethrowUniqueConstraint(error);
       throw error;
@@ -276,6 +286,9 @@ export class ProductsService {
             const after =
               this.toDetail(
                 updated as ProductRecord,
+                await this.settings.currencyCodeInTransaction(
+                  tx,
+                ),
               );
 
             await this.audit.recordInTransaction(
@@ -295,7 +308,10 @@ export class ProductsService {
           },
         );
 
-      return this.toDetail(product as ProductRecord);
+      return this.toDetail(
+      product as ProductRecord,
+      await this.settings.currencyCode(),
+    );
     } catch (error) {
       this.rethrowUniqueConstraint(error);
       throw error;
@@ -355,7 +371,10 @@ export class ProductsService {
         },
       );
 
-    return this.toDetail(product as ProductRecord);
+    return this.toDetail(
+      product as ProductRecord,
+      await this.settings.currencyCode(),
+    );
   }
 
   private async assertReferences(
@@ -594,23 +613,20 @@ export class ProductsService {
     };
   }
 
-  private toDetail(product: ProductRecord) {
+  private toDetail(
+    product: ProductRecord,
+    currencyCode: string,
+  ) {
     return {
       ...this.toSummary(product),
       ...(product.description
         ? { description: product.description }
         : {}),
-      currencyCode: this.currencyCode(),
+      currencyCode,
       createdAt: product.createdAt,
     };
   }
 
-  private currencyCode(): string {
-    return (
-      this.config.get<string>('app.currencyCode') ??
-      'AED'
-    );
-  }
 
   private notFound(): NotFoundException {
     return new NotFoundException({

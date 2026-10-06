@@ -11,6 +11,7 @@ import { toPaginatedResult } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
+import { SettingsService } from '../settings/settings.service.js';
 import { StockMovementsService } from '../stock-movements/stock-movements.service.js';
 import type { StockCountCreateDto } from './dto/stock-count-create.dto.js';
 import type { StockCountLineQueryDto } from './dto/stock-count-line-query.dto.js';
@@ -65,6 +66,7 @@ interface LockedCountRow {
   warehouseId: string;
   number: string;
   startedAt: Date | null;
+  concurrencyPolicy: string;
 }
 
 interface SnapshotRow {
@@ -78,6 +80,8 @@ interface PostLineRow {
   productId: string;
   expectedQuantity: string;
   countedQuantity: string | null;
+  countedAt: Date | null;
+  quantityAtCount: string | null;
   varianceQuantity: string | null;
   snapshotUnitCost: string;
   movementId: string | null;
@@ -269,6 +273,7 @@ export class StockCountsService {
     private readonly prisma: PrismaService,
     private readonly movements: StockMovementsService,
     private readonly audit: AuditService,
+    private readonly settings: SettingsService,
   ) {}
 
   async list(query: StockCountQueryDto) {
@@ -625,6 +630,11 @@ export class StockCountsService {
           });
         }
 
+        const concurrencyPolicy =
+          await this.settings.stockCountConcurrencyPolicyInTransaction(
+            tx,
+          );
+
         const reservations =
           await tx.$queryRawUnsafe<
             ExistsRow[]
@@ -641,6 +651,7 @@ export class StockCountsService {
           );
 
         if (
+          concurrencyPolicy === 'freeze' &&
           reservations[0]?.exists === true
         ) {
           throw new ConflictException({
@@ -692,6 +703,7 @@ export class StockCountsService {
           where: { id },
           data: {
             status: 'COUNTING',
+            concurrencyPolicy,
             startedAt,
             startedByUserId: userId,
           },
@@ -729,6 +741,7 @@ export class StockCountsService {
                 locked.warehouseId,
               snapshotLineCount:
                 snapshot.length,
+              concurrencyPolicy,
             },
           },
         );
@@ -746,10 +759,16 @@ export class StockCountsService {
   ) {
     await this.prisma.$transaction(
       async (tx) => {
-        await this.lockWithStatus(
+        const locked =
+          await this.lockWithStatus(
+            tx,
+            id,
+            'COUNTING',
+          );
+
+        await this.movements.lockWarehousesInventoryInTransaction(
           tx,
-          id,
-          'COUNTING',
+          [locked.warehouseId],
         );
 
         const duplicate =
@@ -816,13 +835,39 @@ export class StockCountsService {
                 'UPDATE "stock_count_lines"',
                 'SET',
                 '  "counted_quantity" = $2::numeric(19,4),',
-                '  "variance_quantity" = $2::numeric(19,4) - "expected_quantity"',
+                '  "counted_at" = clock_timestamp(),',
+                '  "quantity_at_count" = COALESCE((',
+                '    SELECT ii."quantity_on_hand"',
+                '    FROM "inventory_items" ii',
+                '    WHERE ii."product_id" = "stock_count_lines"."product_id"',
+                '      AND ii."warehouse_id" = $4::uuid',
+                '  ), 0),',
+                '  "expected_quantity" = CASE',
+                '    WHEN $5::text = \'reconcile\' THEN COALESCE((',
+                '      SELECT ii."quantity_on_hand"',
+                '      FROM "inventory_items" ii',
+                '      WHERE ii."product_id" = "stock_count_lines"."product_id"',
+                '        AND ii."warehouse_id" = $4::uuid',
+                '    ), 0)',
+                '    ELSE "expected_quantity"',
+                '  END,',
+                '  "variance_quantity" = $2::numeric(19,4) - CASE',
+                '    WHEN $5::text = \'reconcile\' THEN COALESCE((',
+                '      SELECT ii."quantity_on_hand"',
+                '      FROM "inventory_items" ii',
+                '      WHERE ii."product_id" = "stock_count_lines"."product_id"',
+                '        AND ii."warehouse_id" = $4::uuid',
+                '    ), 0)',
+                '    ELSE "expected_quantity"',
+                '  END',
                 'WHERE "id" = $1::uuid',
                 '  AND "stock_count_id" = $3::uuid',
               ].join('\n'),
               line.lineId,
               quantity,
               id,
+              locked.warehouseId,
+              locked.concurrencyPolicy,
             );
 
           if (updated !== 1) {
@@ -1009,6 +1054,8 @@ export class StockCountsService {
           );
 
         if (
+          locked.concurrencyPolicy ===
+            'freeze' &&
           reservations[0]?.exists === true
         ) {
           throw new ConflictException({
@@ -1019,37 +1066,43 @@ export class StockCountsService {
           });
         }
 
-        const intervening =
-          await tx.$queryRawUnsafe<
-            ExistsRow[]
-          >(
-            [
-              'SELECT EXISTS (',
-              '  SELECT 1',
-              '  FROM "stock_movements"',
-              '  WHERE "warehouse_id" = $1::uuid',
-              '    AND "created_at" > $2::timestamptz',
-              '    AND NOT (',
-              '      "type" = \'STOCK_COUNT\'',
-              '      AND "reference_type" = \'stock-count\'',
-              '      AND "reference_id" = $3::text',
-              '    )',
-              ') AS "exists"',
-            ].join('\n'),
-            locked.warehouseId,
-            locked.startedAt,
-            id,
-          );
-
         if (
-          intervening[0]?.exists === true
+          locked.concurrencyPolicy ===
+          'freeze'
         ) {
-          throw new ConflictException({
-            code:
-              'STOCK_COUNT_INTERVENING_MOVEMENT',
-            message:
-              'Inventory activity occurred after the count snapshot. This count cannot be safely posted',
-          });
+          const intervening =
+            await tx.$queryRawUnsafe<
+              ExistsRow[]
+            >(
+              [
+                'SELECT EXISTS (',
+                '  SELECT 1',
+                '  FROM "stock_movements"',
+                '  WHERE "warehouse_id" = $1::uuid',
+                '    AND "created_at" > $2::timestamptz',
+                '    AND NOT (',
+                '      "type" = \'STOCK_COUNT\'',
+                '      AND "reference_type" = \'stock-count\'',
+                '      AND "reference_id" = $3::text',
+                '    )',
+                ') AS "exists"',
+              ].join('\n'),
+              locked.warehouseId,
+              locked.startedAt,
+              id,
+            );
+
+          if (
+            intervening[0]?.exists ===
+            true
+          ) {
+            throw new ConflictException({
+              code:
+                'STOCK_COUNT_INTERVENING_MOVEMENT',
+              message:
+                'Inventory activity occurred after the count snapshot. This count cannot be safely posted',
+            });
+          }
         }
 
         const lines =
@@ -1062,6 +1115,8 @@ export class StockCountsService {
               '  scl."product_id"::text AS "productId",',
               '  scl."expected_quantity"::text AS "expectedQuantity",',
               '  scl."counted_quantity"::text AS "countedQuantity",',
+              '  scl."counted_at" AS "countedAt",',
+              '  scl."quantity_at_count"::text AS "quantityAtCount",',
               '  scl."variance_quantity"::text AS "varianceQuantity",',
               '  scl."snapshot_unit_cost"::text AS "snapshotUnitCost",',
               '  scl."movement_id"::text AS "movementId",',
@@ -1115,13 +1170,35 @@ export class StockCountsService {
           }
 
           if (
-            line.currentQuantity === null ||
-            this.parseScaled4(
-              line.currentQuantity,
-            ) !==
+            locked.concurrencyPolicy ===
+              'reconcile' &&
+            (line.countedAt === null ||
+              line.quantityAtCount === null)
+          ) {
+            throw new ConflictException({
+              code:
+                'STOCK_COUNT_RECONCILIATION_CONTEXT_MISSING',
+              message:
+                'A counted line is missing reconciliation context',
+              details: {
+                lineId: line.id,
+              },
+            });
+          }
+
+          if (
+            locked.concurrencyPolicy ===
+              'freeze' &&
+            (
+              line.currentQuantity ===
+                null ||
               this.parseScaled4(
-                line.expectedQuantity,
-              )
+                line.currentQuantity,
+              ) !==
+                this.parseScaled4(
+                  line.expectedQuantity,
+                )
+            )
           ) {
             throw new ConflictException({
               code:
@@ -1253,6 +1330,8 @@ export class StockCountsService {
                         0,
                     ) !== 0,
                 ).length,
+              concurrencyPolicy:
+                locked.concurrencyPolicy,
             },
           },
         );
@@ -1345,7 +1424,8 @@ export class StockCountsService {
           '  "status"::text AS "status",',
           '  "warehouse_id"::text AS "warehouseId",',
           '  "number" AS "number",',
-          '  "started_at" AS "startedAt"',
+          '  "started_at" AS "startedAt",',
+          '  "concurrency_policy" AS "concurrencyPolicy"',
           'FROM "stock_counts"',
           'WHERE "id" = $1::uuid',
           'FOR UPDATE',

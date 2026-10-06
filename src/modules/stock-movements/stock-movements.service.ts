@@ -11,6 +11,7 @@ import { ApiException } from '../../common/exceptions/api.exception.js';
 import { toPaginatedResult } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import type { Prisma } from '../../generated/prisma/client.js';
+import { SettingsService } from '../settings/settings.service.js';
 import { StockMovementQueryDto } from './dto/stock-movement-query.dto.js';
 import {
   type ApplyReservedSaleInput,
@@ -74,6 +75,7 @@ interface ActorRow {
 interface ActiveStockCountRow {
   id: string;
   number: string;
+  concurrencyPolicy: string;
 }
 
 const MOVEMENT_SELECT = [
@@ -275,7 +277,10 @@ const INSERT_MOVEMENT_QUERY = [
 
 @Injectable()
 export class StockMovementsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settings: SettingsService,
+  ) {}
 
   async list(query: StockMovementQueryDto) {
     this.assertSort(query.sort);
@@ -470,15 +475,10 @@ export class StockMovementsService {
       });
     }
 
-    const setting =
-      await tx.systemSetting.findUnique({
-        where: {
-          key: 'inventory.allowNegativeStock',
-        },
-        select: { value: true },
-      });
     const allowNegativeStock =
-      setting?.value === true;
+      await this.settings.allowNegativeStockInTransaction(
+        tx,
+      );
 
     const updatedRows =
       await tx.$queryRawUnsafe<UpdatedInventoryRow[]>(
@@ -774,7 +774,8 @@ export class StockMovementsService {
           [
             'SELECT',
             '  "id"::text AS "id",',
-            '  "number" AS "number"',
+            '  "number" AS "number",',
+            '  "concurrency_policy" AS "concurrencyPolicy"',
             'FROM "stock_counts"',
             'WHERE "warehouse_id" = $1::uuid',
             '  AND "status" IN (\'COUNTING\', \'SUBMITTED\')',
@@ -788,7 +789,9 @@ export class StockMovementsService {
 
       if (
         active &&
-        active.id !== allowedStockCountId
+        active.id !== allowedStockCountId &&
+        active.concurrencyPolicy ===
+          'freeze'
       ) {
         throw new ConflictException({
           code: 'WAREHOUSE_STOCK_COUNT_ACTIVE',
@@ -798,6 +801,8 @@ export class StockMovementsService {
             warehouseId,
             stockCountId: active.id,
             stockCountNumber: active.number,
+            concurrencyPolicy:
+              active.concurrencyPolicy,
           },
         });
       }

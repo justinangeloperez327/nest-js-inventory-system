@@ -19,23 +19,83 @@ const adapter = new PrismaPg({ connectionString });
 const prisma = new PrismaClient({ adapter });
 
 async function seedSettings(): Promise<void> {
-  await prisma.systemSetting.upsert({
-    where: { key: 'inventory.allowNegativeStock' },
-    update: {},
-    create: {
-      key: 'inventory.allowNegativeStock',
-      value: false,
+  const settings = [
+    {
+      key: 'application.organizationName',
+      value:
+        process.env.ORGANIZATION_NAME?.trim() ||
+        'Inventory System',
+      bootstrapFromEnvironment: true,
     },
-  });
-
-  await prisma.systemSetting.upsert({
-    where: { key: 'inventory.defaultPageSize' },
-    update: {},
-    create: {
+    {
+      key: 'application.timezone',
+      value:
+        process.env.TIMEZONE?.trim() ||
+        'UTC',
+      bootstrapFromEnvironment: true,
+    },
+    {
+      key: 'application.currencyCode',
+      value: (
+        process.env.CURRENCY_CODE ??
+        'AED'
+      ).toUpperCase(),
+      bootstrapFromEnvironment: true,
+    },
+    {
       key: 'inventory.defaultPageSize',
       value: 25,
+      bootstrapFromEnvironment: false,
     },
-  });
+    {
+      key: 'inventory.allowNegativeStock',
+      value: false,
+      bootstrapFromEnvironment: false,
+    },
+    {
+      key:
+        'inventory.stockCountConcurrencyPolicy',
+      value: 'freeze',
+      bootstrapFromEnvironment: false,
+    },
+  ] as const;
+
+  for (const setting of settings) {
+    const existing =
+      await prisma.systemSetting.findUnique({
+        where: {
+          key: setting.key,
+        },
+        select: {
+          id: true,
+          updatedByUserId: true,
+        },
+      });
+
+    if (!existing) {
+      await prisma.systemSetting.create({
+        data: {
+          key: setting.key,
+          value: setting.value,
+        },
+      });
+      continue;
+    }
+
+    if (
+      setting.bootstrapFromEnvironment &&
+      existing.updatedByUserId === null
+    ) {
+      await prisma.systemSetting.update({
+        where: {
+          id: existing.id,
+        },
+        data: {
+          value: setting.value,
+        },
+      });
+    }
+  }
 }
 
 async function seedAccessControl(): Promise<void> {

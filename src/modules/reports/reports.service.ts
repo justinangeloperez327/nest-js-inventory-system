@@ -3,11 +3,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
 import { ApiException } from '../../common/exceptions/api.exception.js';
 import { createPaginationMeta } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
+import { SettingsService } from '../settings/settings.service.js';
 import {
   STOCK_MOVEMENT_DB_TYPE,
   STOCK_MOVEMENT_TYPES,
@@ -44,7 +44,7 @@ interface ReportParams {
 export class ReportsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
+    private readonly settings: SettingsService,
   ) {}
 
   async options() {
@@ -155,7 +155,9 @@ export class ReportsService {
           ...(spec.currency
             ? {
                 currencyCode:
-                  this.currencyCode(),
+                  await this.settings.currencyCodeInTransaction(
+                    tx,
+                  ),
               }
             : {}),
         };
@@ -471,13 +473,6 @@ export class ReportsService {
     );
   }
 
-  private currencyCode(): string {
-    return (
-      this.config.get<string>(
-        'app.currencyCode',
-      ) ?? 'AED'
-    );
-  }
 
   private movementLabel(
     value:

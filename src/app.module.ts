@@ -9,6 +9,7 @@ import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
 import { GoodsReceiptsModule } from './modules/goods-receipts/goods-receipts.module.js';
 import { AccessControlModule } from './modules/access-control/access-control.module.js';
+import { AuditApiModule } from './modules/audit/audit-api.module.js';
 import { AuditModule } from './modules/audit/audit.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { CategoriesModule } from './modules/categories/categories.module.js';
@@ -21,6 +22,7 @@ import { ProductsModule } from './modules/products/products.module.js';
 import { PurchaseOrdersModule } from './modules/purchase-orders/purchase-orders.module.js';
 import { ReportsModule } from './modules/reports/reports.module.js';
 import { SalesOrdersModule } from './modules/sales-orders/sales-orders.module.js';
+import { SettingsModule } from './modules/settings/settings.module.js';
 import { StockCountsModule } from './modules/stock-counts/stock-counts.module.js';
 import { StockMovementsModule } from './modules/stock-movements/stock-movements.module.js';
 import { SuppliersModule } from './modules/suppliers/suppliers.module.js';
@@ -44,6 +46,8 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module.js';
     AuditModule,
     AuthModule,
     AccessControlModule,
+    AuditApiModule,
+    SettingsModule,
     UsersModule,
     CategoriesModule,
     CustomersModule,

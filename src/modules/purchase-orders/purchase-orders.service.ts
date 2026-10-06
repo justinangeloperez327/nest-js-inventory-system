@@ -5,7 +5,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 
 import { ApiException } from '../../common/exceptions/api.exception.js';
 import {
@@ -13,6 +12,7 @@ import {
   toPaginationWindow,
 } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
+import { SettingsService } from '../settings/settings.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import type { PurchaseOrderLookupQueryDto } from './dto/purchase-order-lookup-query.dto.js';
@@ -113,7 +113,7 @@ const MAX_DECIMAL_19_4_SCALED =
 export class PurchaseOrdersService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
+    private readonly settings: SettingsService,
     private readonly audit: AuditService,
   ) {}
 
@@ -352,7 +352,8 @@ export class PurchaseOrdersService {
 
     return {
       warehouses,
-      currencyCode: this.currencyCode(),
+      currencyCode:
+        await this.settings.currencyCode(),
     };
   }
 
@@ -505,7 +506,9 @@ export class PurchaseOrdersService {
               notes: dto.notes ?? null,
               subtotal: prepared.subtotal,
               currencyCode:
-                this.currencyCode(),
+                await this.settings.currencyCodeInTransaction(
+                  tx,
+                ),
               createdByUserId: userId,
               lines: {
                 create:
@@ -1404,13 +1407,6 @@ export class PurchaseOrdersService {
     return value;
   }
 
-  private currencyCode(): string {
-    return (
-      this.config.get<string>(
-        'app.currencyCode',
-      ) ?? 'AED'
-    );
-  }
 
   private orderBy(
     sort: string | undefined,

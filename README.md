@@ -1637,11 +1637,12 @@ Starting a count:
 2. acquires the warehouse inventory advisory lock
 3. verifies no other active count exists for the warehouse
 4. verifies the warehouse is active
-5. rejects warehouses with outstanding reservations
-6. captures the database timestamp
-7. snapshots every trackable inventory balance
-8. records expected quantity and average unit cost for each product
-9. transitions the session to `counting`
+5. snapshots the configured stock-count concurrency policy onto the count
+6. under `freeze`, rejects warehouses with outstanding reservations
+7. captures the database timestamp
+8. snapshots every trackable inventory balance
+9. records expected quantity and average unit cost for each product
+10. transitions the session to `counting`
 
 The snapshot line stores:
 
@@ -1650,6 +1651,8 @@ productId
 expectedQuantity
 snapshotUnitCost
 countedQuantity
+countedAt
+quantityAtCount
 varianceQuantity
 balanceBefore
 balanceAfter
@@ -1703,24 +1706,26 @@ Submission requires every snapshot line to have a counted quantity.
 
 After transition to `submitted`, counted and variance quantities are immutable.
 
-### Warehouse-freeze concurrency policy
+### Stock-count concurrency policy
 
-Group 18 uses a strict warehouse freeze rather than movement reconciliation.
+Group 22 makes the count concurrency policy configurable. The selected policy is snapshotted onto each count when counting starts, so a later settings change cannot alter an in-progress count.
 
-While a count is `counting` or `submitted`:
+`freeze` keeps the original strict warehouse behavior while a count is `counting` or `submitted`:
 
 - physical stock movements in that warehouse are blocked
 - new inventory reservations are blocked
 - transfers touching the warehouse are blocked
 - receipts, adjustments, dispatches, and returns are blocked
 
-The stock-movement service and PostgreSQL both enforce the freeze.
+`reconcile` allows normal warehouse movements and reservations to continue. When an operator saves a counted line, the backend acquires the same warehouse advisory lock used by inventory movements, captures the current on-hand quantity as `quantityAtCount`, reconciles the line's authoritative expected quantity to that balance, and calculates:
 
-Warehouse-level transaction advisory locks serialize count start/post against inventory operations.
+```text
+varianceQuantity = countedQuantity - expectedQuantity
+```
 
-Sales confirmation also checks the same warehouse freeze before creating reservations.
+Later legitimate movements remain preserved because posting applies the measured variance to the then-current balance rather than replacing the balance with the counted quantity.
 
-A transfer checks both warehouses in deterministic order before posting, avoiding opposite-direction lock ordering.
+The service layer and PostgreSQL triggers enforce the same policy. Only one active stock count per warehouse is allowed under either mode.
 
 ### Approval and posting
 
@@ -1730,11 +1735,12 @@ Before changing inventory it verifies:
 
 - count status is `submitted`
 - warehouse remains active
-- no reserved quantities exist
 - every line remains counted
-- no unexpected stock movement was created after the snapshot
-- every current on-hand balance still equals its captured expected quantity
 - no line was already posted
+- under `freeze`, no reserved quantities exist
+- under `freeze`, no unexpected stock movement was created after the snapshot
+- under `freeze`, every current on-hand balance still equals its captured expected quantity
+- under `reconcile`, every counted line has a captured count-time inventory context
 
 For every non-zero variance the backend creates one immutable:
 
@@ -1781,13 +1787,14 @@ PostgreSQL additionally enforces:
 - only one active count per warehouse
 - non-negative counted quantities
 - authoritative variance formula
-- immutable expected snapshot fields
-- counted quantities locked after submission
+- frozen-count expected quantities are immutable while counting
+- reconciled expected quantities may change only while the count is actively being counted
+- counted quantity, count-time inventory context, expected quantity, and variance are locked after submission
+- the selected concurrency policy is immutable after count start
 - posted count and line immutability
 - non-zero posted variances require movement links
 - zero variances cannot have movements
-- movement inserts blocked during an active count except the count's own posting movement
-- reservation changes blocked during an active count
+- movement and reservation blocking only for active counts using `freeze`
 
 Corrections after posting require a new authorized inventory transaction instead of rewriting count history.
 
@@ -2329,6 +2336,95 @@ The Group 21 migration adds:
 
 Corrections are represented by new business actions; historical audit records are never rewritten.
 
+## Application settings
+
+Group 22 implements the Angular administration settings contract.
+
+Endpoints:
+
+```text
+GET /api/v1/administration/settings
+GET /api/v1/administration/settings/options
+PUT /api/v1/administration/settings
+```
+
+All settings endpoints require:
+
+```text
+settings.manage
+```
+
+The public settings contract contains:
+
+```text
+organizationName
+timezone
+currencyCode
+defaultPageSize
+allowNegativeStock
+stockCountConcurrencyPolicy
+updatedAt
+updatedBy
+```
+
+Only this typed registry can be changed through the API. Arbitrary `system_settings` keys are not exposed as writable application settings.
+
+### Validation and options
+
+The backend validates:
+
+- organization name: required, maximum 200 characters
+- timezone: a runtime-supported IANA timezone
+- currency: a runtime-supported ISO currency code
+- default page size: integer from 10 through 100
+- negative stock: boolean
+- stock-count policy: `freeze` or `reconcile`
+
+The options endpoint returns the timezones and currencies supported by the running Node.js/ICU runtime.
+
+### Runtime behavior
+
+`inventory.allowNegativeStock` is enforced by the stock-movement transaction path.
+
+`application.currencyCode` is used by current product monetary presentation, dashboard valuation, and reports. New purchase orders and sales orders snapshot the current currency code onto the document; changing the setting does not rewrite historical document currencies or convert stored monetary amounts.
+
+`inventory.stockCountConcurrencyPolicy` is snapshotted when a stock count starts. See the stock-count concurrency section for `freeze` and `reconcile` behavior.
+
+`inventory.defaultPageSize` is exposed as the application/UI pagination default. Explicit API `pageSize` values remain bounded by the API maximum, and endpoints that omit the parameter continue to use the server pagination fallback.
+
+Organization name and timezone are persisted application metadata. Timestamps remain stored and transported as absolute database/API timestamps rather than being rewritten into the configured presentation timezone.
+
+### Atomic updates and audit
+
+All six settings are updated in one PostgreSQL transaction protected by an application-settings advisory lock. Concurrent administrators therefore cannot interleave individual setting keys.
+
+Every successful update records:
+
+```text
+settings.updated
+```
+
+in the immutable audit trail with safe before/after snapshots and the authenticated actor.
+
+The settings table also records the latest updating user so the Angular settings page can display `updatedAt` and `updatedBy`.
+
+### Migration defaults
+
+The Group 22 migration creates missing values with these defaults:
+
+```text
+organizationName             Inventory System
+timezone                     UTC
+currencyCode                 AED
+defaultPageSize              25
+allowNegativeStock           false
+stockCountConcurrencyPolicy  freeze
+```
+
+Existing configured keys are preserved by the migration.
+
+When `npm run db:seed` is run, `ORGANIZATION_NAME`, `TIMEZONE`, and `CURRENCY_CODE` may bootstrap their corresponding database values only while those settings have never been updated through the Settings API. Once an authenticated settings update records an updating user, later seeds do not overwrite that API-managed value.
+
 ## Users and access control
 
 User, role, and permission administration is protected by `user.manage`.
@@ -2374,6 +2470,8 @@ Important application settings include:
 API_PREFIX=api/v1
 CORS_ORIGINS=http://localhost:4200
 CURRENCY_CODE=AED
+ORGANIZATION_NAME=Inventory System
+TIMEZONE=UTC
 ```
 
 ## Scripts
