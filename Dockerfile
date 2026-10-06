@@ -4,6 +4,10 @@ FROM node:24.21.0-bookworm-slim AS dependencies
 
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV DATABASE_URL=postgresql://inventory:inventory@localhost:5432/inventory?schema=public \
     NPM_CONFIG_AUDIT=false \
     NPM_CONFIG_FUND=false \
@@ -33,6 +37,10 @@ CMD ["sh", "-c", "npm run db:migrate:deploy && npm run db:seed"]
 FROM node:24.21.0-bookworm-slim AS runtime
 
 WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
