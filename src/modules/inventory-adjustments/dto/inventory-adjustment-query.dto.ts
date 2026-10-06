@@ -23,7 +23,7 @@ export class InventoryAdjustmentQueryDto extends ListQueryDto {
   @IsOptional()
   @OptionalTrimQueryString()
   @IsIn(INVENTORY_ADJUSTMENT_DIRECTIONS)
-  direction?: InventoryAdjustmentDirection;
+  adjustmentDirection?: InventoryAdjustmentDirection;
 
   @IsOptional()
   @OptionalTrimQueryString()

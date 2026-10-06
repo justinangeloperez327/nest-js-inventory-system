@@ -697,7 +697,7 @@ search
 sort
 direction
 warehouseId
-direction
+adjustmentDirection
 status
 dateFrom
 dateTo
@@ -713,7 +713,7 @@ cancelled
 
 The current public API does not expose a cancel command yet; `cancelled` is reserved in the persisted workflow for a future controlled cancellation command.
 
-Default Angular sorting is `createdAt desc`.
+For this endpoint, `direction=asc|desc` is the sort direction and `adjustmentDirection=increase|decrease` is the business-direction filter. Default Angular sorting is `createdAt desc`.
 
 ## Inventory transfers
 

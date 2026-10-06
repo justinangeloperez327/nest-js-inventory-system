@@ -123,10 +123,12 @@ export class InventoryAdjustmentsService {
       ...(query.warehouseId
         ? { warehouseId: query.warehouseId }
         : {}),
-      ...(query.direction
+      ...(query.adjustmentDirection
         ? {
             direction:
-              ADJUSTMENT_DIRECTION_TO_DB[query.direction],
+              ADJUSTMENT_DIRECTION_TO_DB[
+                query.adjustmentDirection
+              ],
           }
         : {}),
       ...(query.status

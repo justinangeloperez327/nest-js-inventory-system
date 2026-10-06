@@ -19,7 +19,7 @@ type SettingsClient = Pick<
   'systemSetting'
 >;
 
-interface SettingsSnapshot {
+export interface SettingsSnapshot {
   organizationName: string;
   timezone: string;
   currencyCode: string;
