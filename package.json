@@ -13,7 +13,7 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main.js",
     "lint": "oxlint src/ test/ prisma/ jest.config.cjs",
-    "check": "npm run lint && npm run build && npm test",
+    "check": "npm run lint && npm run build && npm test && npm run test:e2e",
     "postinstall": "prisma generate --config prisma7.config.ts",
     "db:generate": "prisma generate --config prisma7.config.ts",
     "db:migrate": "prisma migrate dev --config prisma7.config.ts",
@@ -24,7 +24,8 @@
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "test:cov": "jest --runInBand --coverage",
-    "test:e2e": "jest --config test/jest-e2e.config.cjs --runInBand"
+    "test:e2e": "jest --config test/jest-e2e.config.cjs --runInBand",
+    "ci": "npm run lint && npm run build && npm run test:cov && npm run test:e2e"
   },
   "dependencies": {
     "@nestjs/common": "12.1.2",

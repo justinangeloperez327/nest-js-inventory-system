@@ -1,0 +1,216 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '24'
+
+jobs:
+  quality:
+    name: Quality gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://inventory:inventory@127.0.0.1:5432/inventory?schema=public
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Run quality gates
+        run: npm run ci
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-${{ github.sha }}
+          path: coverage/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  database:
+    name: PostgreSQL migration and smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: inventory
+          POSTGRES_USER: inventory
+          POSTGRES_PASSWORD: inventory
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U inventory -d inventory"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      APP_NAME: NestJS Inventory System CI
+      HOST: 127.0.0.1
+      PORT: '3000'
+      API_PREFIX: api/v1
+      CORS_ORIGINS: http://localhost:4200
+      OPENAPI_ENABLED: 'true'
+      OPENAPI_PATH: docs
+      OPENAPI_VERSION: 1.0.0
+      CURRENCY_CODE: AED
+      ORGANIZATION_NAME: CI Inventory System
+      TIMEZONE: UTC
+      DATABASE_URL: postgresql://inventory:inventory@127.0.0.1:5432/inventory?schema=public
+      JWT_ACCESS_SECRET: ci-access-secret-0123456789-abcdefghijklmnopqrstuvwxyz
+      JWT_REFRESH_SECRET: ci-refresh-secret-0123456789-abcdefghijklmnopqrstuvwxyz-different
+      JWT_ACCESS_TTL_SECONDS: '900'
+      JWT_REFRESH_TTL_SECONDS: '604800'
+      JWT_ISSUER: nest-js-inventory-system
+      JWT_AUDIENCE: angular-inventory-system
+      BOOTSTRAP_ADMIN_EMAIL: ci-admin@example.com
+      BOOTSTRAP_ADMIN_PASSWORD: CI-Only-Admin-Password-123!
+      BOOTSTRAP_ADMIN_FIRST_NAME: CI
+      BOOTSTRAP_ADMIN_LAST_NAME: Administrator
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Apply migrations
+        run: npm run db:migrate:deploy
+
+      - name: Seed database
+        run: npm run db:seed
+
+      - name: Verify migration status
+        run: npx prisma migrate status --config prisma7.config.ts
+
+      - name: Build application
+        run: npm run build
+
+      - name: Smoke test application
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node dist/main.js > app.log 2>&1 &
+          app_pid=$!
+          trap 'kill "$app_pid" 2>/dev/null || true' EXIT
+
+          ready=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error \
+              http://127.0.0.1:3000/api/v1/health/ready \
+              > health.json; then
+              ready=1
+              break
+            fi
+
+            if ! kill -0 "$app_pid" 2>/dev/null; then
+              cat app.log
+              exit 1
+            fi
+
+            sleep 1
+          done
+
+          if [ "$ready" -ne 1 ]; then
+            cat app.log
+            exit 1
+          fi
+
+          node -e "const fs=require('fs'); const body=JSON.parse(fs.readFileSync('health.json','utf8')); if(body.status!=='ok'||body.database!=='up') process.exit(1);"
+
+          curl --fail --silent --show-error \
+            http://127.0.0.1:3000/api/v1/docs/openapi.json \
+            > openapi.json
+
+          node -e "const fs=require('fs'); const doc=JSON.parse(fs.readFileSync('openapi.json','utf8')); if(!doc.openapi||!doc.paths||!Object.keys(doc.paths).some((path)=>path.endsWith('/health/ready'))) process.exit(1);"
+
+      - name: Upload smoke-test diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: smoke-test-${{ github.sha }}
+          path: |
+            app.log
+            health.json
+            openapi.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  package:
+    name: Build delivery artifact
+    if: github.event_name != 'pull_request'
+    needs:
+      - quality
+      - database
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: postgresql://inventory:inventory@127.0.0.1:5432/inventory?schema=public
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Build application
+        run: npm run build
+
+      - name: Upload delivery artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nest-js-inventory-system-${{ github.sha }}
+          path: |
+            dist/
+            prisma/schema.prisma
+            prisma/migrations/
+            prisma7.config.ts
+            package.json
+            .env.example
+          if-no-files-found: error
+          retention-days: 14

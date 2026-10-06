@@ -2573,9 +2573,85 @@ npm run test:watch
 npm run test:cov
 npm run test:e2e
 npm run check
+npm run ci
 ```
 
 `npm run check` now runs linting, the production Nest build, and the complete automated test suite.
+
+## CI/CD and quality gates
+
+Group 26 adds GitHub Actions continuous integration and delivery-ready build artifacts.
+
+The `CI` workflow runs on:
+
+```text
+push -> main
+pull_request -> main
+manual workflow_dispatch
+```
+
+### Quality job
+
+The quality gate uses Node.js 24 and verifies:
+
+```text
+dependency installation
+Prisma client generation
+Oxlint
+production Nest build
+unit/regression tests with coverage
+HTTP end-to-end tests
+```
+
+GitHub Actions are pinned to immutable commit SHAs. The workflow comments retain the corresponding release versions so upgrades remain explicit and reviewable.
+
+### PostgreSQL migration and smoke job
+
+A separate job starts PostgreSQL 18 and exercises the real database lifecycle:
+
+```text
+apply all Prisma migrations
+seed system settings / permissions / roles / CI administrator
+verify Prisma migration status
+build the production application
+start dist/main.js
+verify /api/v1/health/ready
+verify /api/v1/docs/openapi.json
+```
+
+This catches migration, seed, startup, database-connectivity, readiness, and generated OpenAPI failures that database-independent unit tests cannot detect.
+
+### Delivery artifact
+
+After both quality jobs pass on a non-PR run, CI publishes a deployment-ready build artifact containing:
+
+```text
+dist/
+prisma/schema.prisma
+prisma/migrations/
+prisma7.config.ts
+package.json
+.env.example
+```
+
+The workflow does not deploy to a hosting provider yet. Deployment remains intentionally separate until a production target and secrets strategy are selected.
+
+### Dependency automation
+
+Dependabot checks both npm dependencies and GitHub Actions weekly. Pull requests created by Dependabot pass through the same CI gates as application changes.
+
+### Install strategy
+
+The repository does not currently contain a `package-lock.json`, so CI uses `npm install` rather than `npm ci`. Direct dependency versions remain pinned in `package.json`. Once a lockfile is committed, CI should switch to `npm ci` and enable the npm cache for fully reproducible installs.
+
+Local parity commands:
+
+```bash
+npm run check
+npm run ci
+```
+
+`npm run check` runs lint, production build, unit/regression tests, and e2e tests. `npm run ci` additionally collects unit-test coverage.
 
 ## Users and access control
 
