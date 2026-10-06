@@ -2542,6 +2542,41 @@ OPENAPI_VERSION=1.0.0
 
 Changing `OPENAPI_PATH` changes only the documentation route. It does not change the application API prefix.
 
+## Automated testing
+
+Group 25 adds automated regression coverage for the backend's shared contracts and critical security/application flows.
+
+The test stack uses Jest with SWC for TypeScript transformation, Nest's official testing utilities, and Supertest for HTTP-level verification.
+
+Coverage currently includes:
+
+- pagination windows and metadata
+- strict query normalization and validation
+- date-only and timestamp range handling
+- literal search escaping for Prisma and PostgreSQL patterns
+- nested validation-error flattening
+- RBAC permission enforcement
+- authentication login, refresh-token rotation, logout, and audit orchestration
+- OpenAPI error/security contract generation
+- liveness/readiness HTTP behavior
+- request correlation IDs
+- standardized HTTP error envelopes
+- login DTO validation and normalization
+
+The normal test suite does not require a running PostgreSQL instance. Database collaborators are replaced with deterministic fakes so local and CI regression tests remain fast and repeatable.
+
+Commands:
+
+```bash
+npm test
+npm run test:watch
+npm run test:cov
+npm run test:e2e
+npm run check
+```
+
+`npm run check` now runs linting, the production Nest build, and the complete automated test suite.
+
 ## Users and access control
 
 User, role, and permission administration is protected by `user.manage`.
@@ -2604,5 +2639,9 @@ npm run start:debug
 npm run start:prod
 npm run lint
 npm run format
+npm test
+npm run test:watch
+npm run test:cov
+npm run test:e2e
 npm run check
 ```
