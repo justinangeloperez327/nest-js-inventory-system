@@ -1244,7 +1244,7 @@ The default Angular sort is `createdAt desc`.
 
 ## Customers
 
-Customers are sales master data. Sales orders remain a separate transactional domain implemented in Group 17.
+Customers are sales master data. Customer master data is consumed by the Sales Order workflow.
 
 Endpoints:
 
@@ -1331,7 +1331,7 @@ The Angular customer list defaults to active customers sorted by `name asc`.
 
 Customers use activation/deactivation rather than hard deletion.
 
-Inactive customers remain valid historical identities. Group 17 must prevent inactive customers from being selected for new sales orders while retaining all existing order references.
+Inactive customers remain valid historical identities. Inactive customers cannot be selected for new sales orders, while existing sales-order references remain valid.
 
 ### RBAC synchronization
 
@@ -1345,6 +1345,244 @@ customer.manage
 The Sales system role receives both permissions and Viewer receives `customer.view`.
 
 After deploying this group to an existing database, run the seed command so the new permission records and system-role mappings are synchronized.
+
+## Sales orders
+
+Sales orders implement reservation, dispatch, completion, and return workflows against warehouse inventory.
+
+Endpoints:
+
+```text
+GET  /api/v1/sales-orders
+GET  /api/v1/sales-orders/form-options
+GET  /api/v1/sales-orders/customer-options?search=...
+GET  /api/v1/sales-orders/customers/:customerId/option
+GET  /api/v1/sales-orders/product-options?warehouseId=...&search=...
+GET  /api/v1/sales-orders/:id
+POST /api/v1/sales-orders
+PUT  /api/v1/sales-orders/:id
+POST /api/v1/sales-orders/:id/confirm
+POST /api/v1/sales-orders/:id/cancel
+POST /api/v1/sales-orders/:id/dispatch
+POST /api/v1/sales-orders/:id/complete
+POST /api/v1/sales-orders/:id/returns
+```
+
+Permissions:
+
+```text
+sales.view
+sales.create
+sales.dispatch
+sales.return
+```
+
+### Sales lifecycle
+
+```text
+draft
+  ↓ confirm
+confirmed
+  ├─ cancel → cancelled
+  ↓ dispatch
+dispatched
+  ↓ complete
+completed
+```
+
+Drafts are the only editable commercial state. Confirmed orders are fully reserved. Dispatch is full-order dispatch in Group 17; partial dispatch is intentionally not represented by silently mutating line quantities.
+
+### Draft sales orders
+
+A draft contains:
+
+```text
+customerId
+warehouseId
+orderDate
+notes
+lines[]
+  productId
+  quantity
+  unitPrice
+```
+
+Rules:
+
+- customer must be active
+- warehouse must be active
+- products must be active and trackable
+- selected products must have an inventory balance in the fulfillment warehouse
+- duplicate products are rejected
+- at least one and at most 200 lines are supported
+- quantities must be positive with up to four decimal places
+- prices must be non-negative with up to four decimal places
+
+Customer lookup returns active customers only.
+
+Product lookup is scoped to the fulfillment warehouse and returns:
+
+```text
+quantityAvailable = quantityOnHand - quantityReserved
+defaultUnitPrice  = product sellingPrice
+```
+
+Displayed availability is advisory until confirmation.
+
+### Authoritative pricing
+
+Angular may calculate draft totals for immediate feedback, but the API persists authoritative values.
+
+The backend calculates each line total and subtotal with fixed-point four-decimal arithmetic.
+
+PostgreSQL also enforces:
+
+```text
+quantity > 0
+unitPrice >= 0
+lineTotal = round(quantity * unitPrice, 4)
+subtotal >= 0
+```
+
+Draft subtotal is synchronized from persisted line totals by a database trigger.
+
+### Confirmation and reservation
+
+Confirmation acquires the sales-order row lock and deterministic product/warehouse advisory locks before reserving stock.
+
+For every line:
+
+```text
+quantityReserved += orderedQuantity
+quantityOnHand    unchanged
+```
+
+Confirmation succeeds only if the complete order can be reserved:
+
+```text
+quantityOnHand - quantityReserved >= orderedQuantity
+```
+
+If any line lacks sufficient current available stock, the complete transaction rolls back.
+
+### Cancellation
+
+Only a confirmed order can be cancelled.
+
+Cancellation releases the full order reservation atomically:
+
+```text
+quantityReserved -= order reservation
+quantityOnHand    unchanged
+```
+
+Cancellation creates no stock movement because no physical inventory moved.
+
+### Dispatch
+
+Dispatch consumes the reservation and physical stock together.
+
+For each line the ledger's reservation-aware sale primitive atomically performs:
+
+```text
+quantityReserved -= dispatched quantity
+quantityOnHand    -= dispatched quantity
+```
+
+It also verifies the dispatch cannot consume inventory reserved by another order.
+
+Each line creates one immutable `sale` movement using the warehouse's current average cost as the inventory cost basis.
+
+The movement reference is:
+
+```text
+type: sales-order
+number: SO-...
+referencePath: /sales/:id
+```
+
+The line stores:
+
+```text
+quantityReserved
+quantityDispatched
+saleMovementId
+```
+
+Group 17 supports full-order dispatch only:
+
+```text
+quantityReserved   ∈ {0, ordered quantity}
+quantityDispatched ∈ {0, ordered quantity}
+```
+
+### Completion
+
+Completion is operational closure only.
+
+```text
+dispatched → completed
+```
+
+It does not create another stock movement because inventory already moved at dispatch.
+
+### Returns
+
+Returns are separate immutable transactions against dispatched or completed orders.
+
+Returnable quantity:
+
+```text
+quantityDispatched - quantityReturned
+```
+
+Each accepted return line:
+
+1. revalidates current returnable quantity
+2. creates an immutable `return-in` movement
+3. increases stock in the original fulfillment warehouse
+4. increments cumulative `quantityReturned`
+5. records an immutable `SRN-...` return transaction
+
+The return movement uses the original sale movement's unit cost, preserving the dispatched inventory cost basis when stock is returned.
+
+Return movement reference:
+
+```text
+type: sales-return
+number: SRN-...
+referencePath: /sales/:salesOrderId
+```
+
+Returns never rewrite or delete the original sale movement.
+
+### Concurrency and immutability
+
+Sales transitions use row locking and deterministic inventory advisory locks.
+
+Concurrent confirmations, cancellations, dispatches, or returns for the same order cannot independently consume the same reservation/returnable quantity.
+
+PostgreSQL protects:
+
+- sales-order identity and workflow transitions
+- commercial immutability after confirmation
+- reservation and dispatch quantity shape
+- returned quantity range
+- immutable sale movement references
+- immutable sales-return headers and lines
+
+### RBAC synchronization
+
+Group 17 adds:
+
+```text
+sales.dispatch
+sales.return
+```
+
+to the canonical permission catalog. The Sales system role receives both permissions.
+
+Existing databases should run the seed command after deployment so new permissions and system-role mappings are synchronized.
 
 ## Users and access control
 

@@ -17,6 +17,7 @@ import { InventoryAdjustmentsModule } from './modules/inventory-adjustments/inve
 import { InventoryTransfersModule } from './modules/inventory-transfers/inventory-transfers.module.js';
 import { ProductsModule } from './modules/products/products.module.js';
 import { PurchaseOrdersModule } from './modules/purchase-orders/purchase-orders.module.js';
+import { SalesOrdersModule } from './modules/sales-orders/sales-orders.module.js';
 import { StockMovementsModule } from './modules/stock-movements/stock-movements.module.js';
 import { SuppliersModule } from './modules/suppliers/suppliers.module.js';
 import { UnitsModule } from './modules/units/units.module.js';
@@ -51,6 +52,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module.js';
     SuppliersModule,
     PurchaseOrdersModule,
     GoodsReceiptsModule,
+    SalesOrdersModule,
     HealthModule,
   ],
 })

@@ -55,3 +55,14 @@ export interface ApplyStockMovementInput {
   performedByUserId?: string;
   occurredAt?: Date;
 }
+
+
+export interface ApplyReservedSaleInput {
+  productId: string;
+  warehouseId: string;
+  quantity: number;
+  reference?: StockMovementReferenceInput;
+  notes?: string;
+  performedByUserId?: string;
+  occurredAt?: Date;
+}

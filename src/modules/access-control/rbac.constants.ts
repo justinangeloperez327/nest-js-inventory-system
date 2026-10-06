@@ -46,6 +46,8 @@ export const Permission = {
   SalesRead: 'sales.view',
   SalesCreate: 'sales.create',
   SalesConfirm: 'sales.create',
+  SalesDispatch: 'sales.dispatch',
+  SalesReturn: 'sales.return',
 
   ReportsView: 'reports.view',
   AuditRead: 'user.manage',
@@ -141,7 +143,15 @@ export const PERMISSION_DEFINITIONS: ReadonlyArray<{
   },
   {
     key: Permission.SalesCreate,
-    description: 'Create and manage sales',
+    description: 'Create, edit, and confirm sales orders',
+  },
+  {
+    key: Permission.SalesDispatch,
+    description: 'Cancel, dispatch, and complete sales orders',
+  },
+  {
+    key: Permission.SalesReturn,
+    description: 'Create sales returns',
   },
   {
     key: Permission.ReportsView,
@@ -239,6 +249,8 @@ export const SYSTEM_ROLE_DEFINITIONS: ReadonlyArray<{
       Permission.CustomersManage,
       Permission.SalesRead,
       Permission.SalesCreate,
+      Permission.SalesDispatch,
+      Permission.SalesReturn,
     ],
   },
   {

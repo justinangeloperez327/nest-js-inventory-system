@@ -30,6 +30,12 @@ model User {
   approvedPurchaseOrders      PurchaseOrder[]       @relation("PurchaseOrderApprovedBy")
   createdGoodsReceipts        GoodsReceipt[]        @relation("GoodsReceiptCreatedBy")
   postedGoodsReceipts         GoodsReceipt[]        @relation("GoodsReceiptPostedBy")
+  createdSalesOrders          SalesOrder[]          @relation("SalesOrderCreatedBy")
+  confirmedSalesOrders        SalesOrder[]          @relation("SalesOrderConfirmedBy")
+  cancelledSalesOrders        SalesOrder[]          @relation("SalesOrderCancelledBy")
+  dispatchedSalesOrders       SalesOrder[]          @relation("SalesOrderDispatchedBy")
+  completedSalesOrders        SalesOrder[]          @relation("SalesOrderCompletedBy")
+  createdSalesReturns         SalesReturn[]         @relation("SalesReturnCreatedBy")
 
   @@map("users")
 }
@@ -145,6 +151,7 @@ model Product {
   inventoryAdjustments InventoryAdjustment[]
   inventoryTransferLines InventoryTransferLine[]
   purchaseOrderLines      PurchaseOrderLine[]
+  salesOrderLines         SalesOrderLine[]
 
   @@index([categoryId])
   @@index([unitId])
@@ -167,6 +174,7 @@ model Warehouse {
   outboundTransfers     InventoryTransfer[] @relation("InventoryTransferSource")
   inboundTransfers      InventoryTransfer[] @relation("InventoryTransferDestination")
   purchaseOrders         PurchaseOrder[]
+  salesOrders            SalesOrder[]
 
   @@index([name])
   @@map("warehouses")
@@ -255,6 +263,8 @@ model StockMovement {
   outboundTransferLine InventoryTransferLine? @relation("InventoryTransferOutboundMovement")
   inboundTransferLine  InventoryTransferLine? @relation("InventoryTransferInboundMovement")
   goodsReceiptLine      GoodsReceiptLine?      @relation("GoodsReceiptMovement")
+  salesOrderLine        SalesOrderLine?        @relation("SalesOrderSaleMovement")
+  salesReturnLine       SalesReturnLine?       @relation("SalesReturnMovement")
 
   @@index([productId, occurredAt])
   @@index([warehouseId, occurredAt])
@@ -529,6 +539,7 @@ model Customer {
   isActive      Boolean  @default(true) @map("is_active")
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  salesOrders   SalesOrder[]
 
   @@index([name])
   @@index([contactName])
@@ -537,4 +548,110 @@ model Customer {
   @@index([countryCode])
   @@index([isActive, name])
   @@map("customers")
+}
+
+
+enum SalesOrderStatus {
+  DRAFT
+  CONFIRMED
+  DISPATCHED
+  COMPLETED
+  CANCELLED
+}
+
+model SalesOrder {
+  id                 String           @id @default(uuid()) @db.Uuid
+  number             String           @unique
+  customerId         String           @map("customer_id") @db.Uuid
+  warehouseId        String           @map("warehouse_id") @db.Uuid
+  orderDate          DateTime         @map("order_date") @db.Date
+  notes              String?
+  status             SalesOrderStatus @default(DRAFT)
+  subtotal           Decimal          @default(0) @db.Decimal(19, 4)
+  currencyCode       String           @map("currency_code") @db.VarChar(3)
+  createdByUserId    String           @map("created_by_user_id") @db.Uuid
+  confirmedByUserId  String?          @map("confirmed_by_user_id") @db.Uuid
+  cancelledByUserId  String?          @map("cancelled_by_user_id") @db.Uuid
+  dispatchedByUserId String?          @map("dispatched_by_user_id") @db.Uuid
+  completedByUserId  String?          @map("completed_by_user_id") @db.Uuid
+  confirmedAt        DateTime?        @map("confirmed_at") @db.Timestamptz(3)
+  cancelledAt        DateTime?        @map("cancelled_at") @db.Timestamptz(3)
+  dispatchedAt       DateTime?        @map("dispatched_at") @db.Timestamptz(3)
+  completedAt        DateTime?        @map("completed_at") @db.Timestamptz(3)
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  customer           Customer         @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  warehouse          Warehouse        @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  createdBy          User             @relation("SalesOrderCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  confirmedBy        User?            @relation("SalesOrderConfirmedBy", fields: [confirmedByUserId], references: [id], onDelete: Restrict)
+  cancelledBy        User?            @relation("SalesOrderCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
+  dispatchedBy       User?            @relation("SalesOrderDispatchedBy", fields: [dispatchedByUserId], references: [id], onDelete: Restrict)
+  completedBy        User?            @relation("SalesOrderCompletedBy", fields: [completedByUserId], references: [id], onDelete: Restrict)
+  lines              SalesOrderLine[]
+  returns            SalesReturn[]
+
+  @@index([customerId, orderDate])
+  @@index([warehouseId, orderDate])
+  @@index([status, orderDate])
+  @@index([createdByUserId])
+  @@index([confirmedByUserId])
+  @@index([cancelledByUserId])
+  @@index([dispatchedByUserId])
+  @@index([completedByUserId])
+  @@index([createdAt])
+  @@map("sales_orders")
+}
+
+model SalesOrderLine {
+  id                 String        @id @default(uuid()) @db.Uuid
+  salesOrderId       String        @map("sales_order_id") @db.Uuid
+  productId          String        @map("product_id") @db.Uuid
+  quantity           Decimal       @db.Decimal(19, 4)
+  unitPrice          Decimal       @map("unit_price") @db.Decimal(19, 4)
+  lineTotal          Decimal       @map("line_total") @db.Decimal(19, 4)
+  quantityReserved   Decimal       @default(0) @map("quantity_reserved") @db.Decimal(19, 4)
+  quantityDispatched Decimal       @default(0) @map("quantity_dispatched") @db.Decimal(19, 4)
+  quantityReturned   Decimal       @default(0) @map("quantity_returned") @db.Decimal(19, 4)
+  saleMovementId     String?       @unique @map("sale_movement_id") @db.Uuid
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  salesOrder         SalesOrder    @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  product            Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  saleMovement       StockMovement? @relation("SalesOrderSaleMovement", fields: [saleMovementId], references: [id], onDelete: Restrict)
+  salesReturnLines   SalesReturnLine[]
+
+  @@unique([salesOrderId, productId])
+  @@index([productId])
+  @@map("sales_order_lines")
+}
+
+model SalesReturn {
+  id              String            @id @default(uuid()) @db.Uuid
+  number          String            @unique
+  salesOrderId    String            @map("sales_order_id") @db.Uuid
+  notes           String?
+  createdByUserId String            @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  salesOrder      SalesOrder        @relation(fields: [salesOrderId], references: [id], onDelete: Restrict)
+  createdBy       User              @relation("SalesReturnCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  lines           SalesReturnLine[]
+
+  @@index([salesOrderId, createdAt])
+  @@index([createdByUserId])
+  @@map("sales_returns")
+}
+
+model SalesReturnLine {
+  id               String         @id @default(uuid()) @db.Uuid
+  salesReturnId    String         @map("sales_return_id") @db.Uuid
+  salesOrderLineId String         @map("sales_order_line_id") @db.Uuid
+  quantityReturned Decimal        @map("quantity_returned") @db.Decimal(19, 4)
+  movementId       String         @unique @map("movement_id") @db.Uuid
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  salesReturn      SalesReturn    @relation(fields: [salesReturnId], references: [id], onDelete: Restrict)
+  salesOrderLine   SalesOrderLine @relation(fields: [salesOrderLineId], references: [id], onDelete: Restrict)
+  movement         StockMovement  @relation("SalesReturnMovement", fields: [movementId], references: [id], onDelete: Restrict)
+
+  @@unique([salesReturnId, salesOrderLineId])
+  @@index([salesOrderLineId])
+  @@map("sales_return_lines")
 }
