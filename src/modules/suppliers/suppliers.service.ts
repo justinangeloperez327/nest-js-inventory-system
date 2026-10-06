@@ -16,6 +16,7 @@ import { PrismaService } from '../../database/prisma.service.js';
 import type { SupplierListQueryDto } from './dto/supplier-list-query.dto.js';
 import type { SupplierStatusDto } from './dto/supplier-status.dto.js';
 import type { SupplierUpsertDto } from './dto/supplier-upsert.dto.js';
+import { PURCHASE_ORDER_STATUS_FROM_DB } from '../purchase-orders/purchase-order.constants.js';
 
 @Injectable()
 export class SuppliersService {
@@ -171,9 +172,58 @@ export class SuppliersService {
   ) {
     await this.requireSupplier(id);
 
+    const { skip, take } =
+      toPaginationWindow(query);
+
+    const [items, totalItems] =
+      await this.prisma.$transaction([
+        this.prisma.purchaseOrder.findMany({
+          where: { supplierId: id },
+          skip,
+          take,
+          orderBy: [
+            { orderDate: 'desc' },
+            { createdAt: 'desc' },
+          ],
+          select: {
+            id: true,
+            number: true,
+            orderDate: true,
+            expectedDate: true,
+            status: true,
+            subtotal: true,
+          },
+        }),
+        this.prisma.purchaseOrder.count({
+          where: { supplierId: id },
+        }),
+      ]);
+
     const page = toPaginatedResult(
-      [],
-      0,
+      items.map((item) => ({
+        id: item.id,
+        number: item.number,
+        orderDate:
+          item.orderDate
+            .toISOString()
+            .slice(0, 10),
+        ...(item.expectedDate
+          ? {
+              expectedDate:
+                item.expectedDate
+                  .toISOString()
+                  .slice(0, 10),
+            }
+          : {}),
+        status:
+          PURCHASE_ORDER_STATUS_FROM_DB[
+            item.status
+          ],
+        totalAmount: Number(
+          item.subtotal.toString(),
+        ),
+      })),
+      totalItems,
       query,
     );
 

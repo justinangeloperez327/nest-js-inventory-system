@@ -936,6 +936,149 @@ That preserves the Angular supplier profile contract without prematurely creatin
 
 Group 14 will replace the empty history implementation with actual purchase-order data while keeping the same response contract.
 
+## Purchase orders
+
+Purchase orders implement the commercial purchasing workflow before physical receiving.
+
+Endpoints:
+
+```text
+GET  /api/v1/purchase-orders
+GET  /api/v1/purchase-orders/form-options
+GET  /api/v1/purchase-orders/supplier-options?search=...
+GET  /api/v1/purchase-orders/product-options?search=...
+GET  /api/v1/purchase-orders/:id
+POST /api/v1/purchase-orders
+PUT  /api/v1/purchase-orders/:id
+POST /api/v1/purchase-orders/:id/submit
+POST /api/v1/purchase-orders/:id/approve
+```
+
+Permissions:
+
+- `purchase.view` — list, detail, form options
+- `purchase.create` — supplier/product lookup, create, edit, submit
+- `purchase.approve` — approve submitted purchase orders
+- `purchase.receive` — reserved for Group 15 receiving
+
+### Workflow
+
+```text
+draft
+  ↓ submit
+submitted
+  ↓ approve
+approved
+  ↓ Group 15 receiving
+partially-received
+  ↓
+received
+```
+
+Only drafts are commercially editable. Submitted purchase orders lock supplier, warehouse, dates, notes, quantities, prices, and totals.
+
+Cancellation is represented in the status model for future controlled workflow support, but Group 14 does not expose an arbitrary cancel endpoint.
+
+### Purchase-order structure
+
+Header:
+
+```text
+number
+supplierId
+warehouseId
+orderDate
+expectedDate
+notes
+status
+subtotal
+currencyCode
+created/submitted/approved audit fields
+```
+
+Lines:
+
+```text
+productId
+quantity
+unitPrice
+lineTotal
+quantityReceived
+quantityRemaining
+```
+
+A purchase order supports at most 200 unique product lines.
+
+Products must be active and trackable. New and edited purchase orders require an active supplier and active receiving warehouse.
+
+### Lookup strategy
+
+Supplier and product lookup are server-side and limited to 20 results.
+
+Supplier lookup returns active suppliers and searches code, name, and contact name.
+
+Product lookup returns active, trackable products and searches SKU, name, and barcode. `defaultUnitPrice` uses the current Product Master cost price only as operator input assistance; the saved PO line price remains the commercial snapshot.
+
+`GET /purchase-orders/form-options` returns active warehouses plus the configured currency code.
+
+### Totals
+
+The API does not trust client totals.
+
+Quantity and unit price support up to four decimal places. Backend fixed-point arithmetic calculates every line total and the PO subtotal before persistence.
+
+PostgreSQL also validates:
+
+```text
+quantity > 0
+unitPrice >= 0
+lineTotal = round(quantity * unitPrice, 4)
+0 <= quantityReceived <= quantity
+subtotal >= 0
+```
+
+A database trigger synchronizes the draft subtotal from persisted line totals, so direct line changes cannot leave the draft header total inconsistent.
+
+### Submit and approve
+
+Submit and approve both lock the purchase order row with `FOR UPDATE` before checking status.
+
+Submission revalidates:
+
+- status is draft
+- supplier remains active
+- receiving warehouse remains active
+- at least one line exists
+- expected date is not before order date
+- all products remain active and trackable
+- quantities and prices remain valid
+
+Approval repeats the operational validation and is allowed only from `submitted`.
+
+This prevents stale drafts or concurrent requests from bypassing the workflow.
+
+### Receiving boundary
+
+Group 14 persists `quantityReceived` on each line and the statuses `partially-received` / `received`, but does not mutate them through the purchasing API.
+
+Database guards are already prepared for Group 15:
+
+- commercial line fields stay immutable after submission
+- received quantity can only increase
+- received quantity can only change while PO status is `approved` or `partially-received`
+- approved POs may transition to partially received or received
+- partially received POs may transition to received
+
+### Supplier history
+
+The Group 13 endpoint:
+
+```text
+GET /api/v1/suppliers/:id/purchase-history
+```
+
+now reads actual purchase orders and returns number, dates, status, subtotal as `totalAmount`, pagination, and configured currency code.
+
 ## Users and access control
 
 User, role, and permission administration is protected by `user.manage`.
