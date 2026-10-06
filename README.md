@@ -2546,7 +2546,7 @@ Changing `OPENAPI_PATH` changes only the documentation route. It does not change
 
 Group 25 adds automated regression coverage for the backend's shared contracts and critical security/application flows.
 
-The test stack uses Jest with SWC for TypeScript transformation, Nest's official testing utilities, and Supertest for HTTP-level verification.
+The test stack uses Jest with SWC in native ESM mode for TypeScript transformation, Nest's official testing utilities, and Supertest for HTTP-level verification.
 
 Coverage currently includes:
 
@@ -2613,7 +2613,7 @@ A separate job starts PostgreSQL 18 and exercises the real database lifecycle:
 apply all Prisma migrations
 seed system settings / permissions / roles / CI administrator
 verify Prisma migration status
-build the production application
+build the production application to dist/main.js
 start dist/main.js
 verify /api/v1/health/ready
 verify /api/v1/docs/openapi.json

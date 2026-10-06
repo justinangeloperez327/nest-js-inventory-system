@@ -3,6 +3,7 @@ module.exports = {
   testEnvironment: 'node',
   testMatch: ['<rootDir>/src/**/*.spec.ts'],
   moduleFileExtensions: ['ts', 'js', 'json'],
+  extensionsToTreatAsEsm: ['.ts'],
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
@@ -23,7 +24,7 @@ module.exports = {
           target: 'es2023',
         },
         module: {
-          type: 'commonjs',
+          type: 'es6',
         },
       },
     ],
