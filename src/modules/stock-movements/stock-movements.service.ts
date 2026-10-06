@@ -71,6 +71,11 @@ interface ActorRow {
   name: string;
 }
 
+interface ActiveStockCountRow {
+  id: string;
+  number: string;
+}
+
 const MOVEMENT_SELECT = [
   'SELECT',
   '  m."id"::text AS "id",',
@@ -376,6 +381,14 @@ export class StockMovementsService {
   ) {
     this.validateCommand(input);
 
+    await this.assertWarehousesMovementAllowedInTransaction(
+      tx,
+      [input.warehouseId],
+      input.type === 'stock-count'
+        ? input.reference?.id
+        : undefined,
+    );
+
     const quantityChange = this.decimalArgument(
       input.quantityChange,
     );
@@ -550,6 +563,11 @@ export class StockMovementsService {
     tx: Prisma.TransactionClient,
     input: ApplyReservedSaleInput,
   ) {
+    await this.assertWarehousesMovementAllowedInTransaction(
+      tx,
+      [input.warehouseId],
+    );
+
     if (input.quantity <= 0) {
       throw new BadRequestException({
         code: 'INVALID_RESERVED_SALE_QUANTITY',
@@ -720,6 +738,70 @@ export class StockMovementsService {
         : {}),
       createdAt: new Date(),
     };
+  }
+
+  async lockWarehousesInventoryInTransaction(
+    tx: Prisma.TransactionClient,
+    warehouseIds: readonly string[],
+  ): Promise<void> {
+    const ids = [...new Set(warehouseIds)].sort();
+
+    for (const warehouseId of ids) {
+      await tx.$queryRawUnsafe(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))',
+        'warehouse-inventory:' + warehouseId,
+      );
+    }
+  }
+
+  async assertWarehousesMovementAllowedInTransaction(
+    tx: Prisma.TransactionClient,
+    warehouseIds: readonly string[],
+    allowedStockCountId?: string,
+  ): Promise<void> {
+    const ids = [...new Set(warehouseIds)].sort();
+
+    await this.lockWarehousesInventoryInTransaction(
+      tx,
+      ids,
+    );
+
+    for (const warehouseId of ids) {
+      const rows =
+        await tx.$queryRawUnsafe<
+          ActiveStockCountRow[]
+        >(
+          [
+            'SELECT',
+            '  "id"::text AS "id",',
+            '  "number" AS "number"',
+            'FROM "stock_counts"',
+            'WHERE "warehouse_id" = $1::uuid',
+            '  AND "status" IN (\'COUNTING\', \'SUBMITTED\')',
+            'ORDER BY "created_at" ASC',
+            'LIMIT 1',
+          ].join('\n'),
+          warehouseId,
+        );
+
+      const active = rows[0];
+
+      if (
+        active &&
+        active.id !== allowedStockCountId
+      ) {
+        throw new ConflictException({
+          code: 'WAREHOUSE_STOCK_COUNT_ACTIVE',
+          message:
+            'Inventory movement is blocked while this warehouse has an active stock count',
+          details: {
+            warehouseId,
+            stockCountId: active.id,
+            stockCountNumber: active.number,
+          },
+        });
+      }
+    }
   }
 
   private async assertMovementEntities(

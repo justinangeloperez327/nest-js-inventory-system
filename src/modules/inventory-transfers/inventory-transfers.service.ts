@@ -662,6 +662,14 @@ export class InventoryTransfersService {
           ),
         );
 
+        await this.movements.assertWarehousesMovementAllowedInTransaction(
+          tx,
+          [
+            transfer.sourceWarehouseId,
+            transfer.destinationWarehouseId,
+          ],
+        );
+
         await this.acquireTransferLocks(
           tx,
           sortedLines.map(

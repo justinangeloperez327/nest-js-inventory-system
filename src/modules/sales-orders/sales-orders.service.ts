@@ -782,6 +782,11 @@ export class SalesOrdersService {
             id,
           );
 
+        await this.movements.assertWarehousesMovementAllowedInTransaction(
+          tx,
+          [order.warehouseId],
+        );
+
         await tx.salesOrder.update({
           where: { id },
           data: {

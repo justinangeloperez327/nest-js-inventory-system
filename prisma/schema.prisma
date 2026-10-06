@@ -36,6 +36,10 @@ model User {
   dispatchedSalesOrders       SalesOrder[]          @relation("SalesOrderDispatchedBy")
   completedSalesOrders        SalesOrder[]          @relation("SalesOrderCompletedBy")
   createdSalesReturns         SalesReturn[]         @relation("SalesReturnCreatedBy")
+  createdStockCounts          StockCount[]          @relation("StockCountCreatedBy")
+  startedStockCounts          StockCount[]          @relation("StockCountStartedBy")
+  submittedStockCounts        StockCount[]          @relation("StockCountSubmittedBy")
+  approvedStockCounts         StockCount[]          @relation("StockCountApprovedBy")
 
   @@map("users")
 }
@@ -152,6 +156,7 @@ model Product {
   inventoryTransferLines InventoryTransferLine[]
   purchaseOrderLines      PurchaseOrderLine[]
   salesOrderLines         SalesOrderLine[]
+  stockCountLines         StockCountLine[]
 
   @@index([categoryId])
   @@index([unitId])
@@ -175,6 +180,7 @@ model Warehouse {
   inboundTransfers      InventoryTransfer[] @relation("InventoryTransferDestination")
   purchaseOrders         PurchaseOrder[]
   salesOrders            SalesOrder[]
+  stockCounts            StockCount[]
 
   @@index([name])
   @@map("warehouses")
@@ -265,6 +271,7 @@ model StockMovement {
   goodsReceiptLine      GoodsReceiptLine?      @relation("GoodsReceiptMovement")
   salesOrderLine        SalesOrderLine?        @relation("SalesOrderSaleMovement")
   salesReturnLine       SalesReturnLine?       @relation("SalesReturnMovement")
+  stockCountLine        StockCountLine?        @relation("StockCountMovement")
 
   @@index([productId, occurredAt])
   @@index([warehouseId, occurredAt])
@@ -654,4 +661,68 @@ model SalesReturnLine {
   @@unique([salesReturnId, salesOrderLineId])
   @@index([salesOrderLineId])
   @@map("sales_return_lines")
+}
+
+
+enum StockCountStatus {
+  DRAFT
+  COUNTING
+  SUBMITTED
+  POSTED
+  CANCELLED
+}
+
+model StockCount {
+  id                String           @id @default(uuid()) @db.Uuid
+  number            String           @unique
+  warehouseId       String           @map("warehouse_id") @db.Uuid
+  notes             String?
+  status            StockCountStatus @default(DRAFT)
+  createdByUserId   String           @map("created_by_user_id") @db.Uuid
+  startedByUserId   String?          @map("started_by_user_id") @db.Uuid
+  submittedByUserId String?          @map("submitted_by_user_id") @db.Uuid
+  approvedByUserId  String?          @map("approved_by_user_id") @db.Uuid
+  startedAt         DateTime?        @map("started_at") @db.Timestamptz(3)
+  submittedAt       DateTime?        @map("submitted_at") @db.Timestamptz(3)
+  approvedAt        DateTime?        @map("approved_at") @db.Timestamptz(3)
+  postedAt          DateTime?        @map("posted_at") @db.Timestamptz(3)
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  warehouse         Warehouse        @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  createdBy         User             @relation("StockCountCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  startedBy         User?            @relation("StockCountStartedBy", fields: [startedByUserId], references: [id], onDelete: Restrict)
+  submittedBy       User?            @relation("StockCountSubmittedBy", fields: [submittedByUserId], references: [id], onDelete: Restrict)
+  approvedBy        User?            @relation("StockCountApprovedBy", fields: [approvedByUserId], references: [id], onDelete: Restrict)
+  lines             StockCountLine[]
+
+  @@index([warehouseId, createdAt])
+  @@index([status, createdAt])
+  @@index([createdByUserId])
+  @@index([startedByUserId])
+  @@index([submittedByUserId])
+  @@index([approvedByUserId])
+  @@map("stock_counts")
+}
+
+model StockCountLine {
+  id                 String        @id @default(uuid()) @db.Uuid
+  stockCountId       String        @map("stock_count_id") @db.Uuid
+  productId          String        @map("product_id") @db.Uuid
+  expectedQuantity   Decimal       @map("expected_quantity") @db.Decimal(19, 4)
+  countedQuantity    Decimal?      @map("counted_quantity") @db.Decimal(19, 4)
+  varianceQuantity   Decimal?      @map("variance_quantity") @db.Decimal(19, 4)
+  snapshotUnitCost   Decimal       @map("snapshot_unit_cost") @db.Decimal(19, 4)
+  balanceBefore      Decimal?      @map("balance_before") @db.Decimal(19, 4)
+  balanceAfter       Decimal?      @map("balance_after") @db.Decimal(19, 4)
+  movementId         String?       @unique @map("movement_id") @db.Uuid
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  stockCount         StockCount    @relation(fields: [stockCountId], references: [id], onDelete: Cascade)
+  product            Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  movement           StockMovement? @relation("StockCountMovement", fields: [movementId], references: [id], onDelete: Restrict)
+
+  @@unique([stockCountId, productId])
+  @@index([productId])
+  @@index([stockCountId, varianceQuantity])
+  @@map("stock_count_lines")
 }

@@ -31,6 +31,7 @@ export const Permission = {
   InventoryAdjust: 'inventory.adjust',
   InventoryTransfer: 'inventory.transfer',
   InventoryCount: 'inventory.count',
+  InventoryCountApprove: 'inventory.count.approve',
 
   SuppliersRead: 'supplier.view',
   SuppliersManage: 'supplier.manage',
@@ -111,7 +112,11 @@ export const PERMISSION_DEFINITIONS: ReadonlyArray<{
   },
   {
     key: Permission.InventoryCount,
-    description: 'Perform stock counts',
+    description: 'Create, count, and submit stock counts',
+  },
+  {
+    key: Permission.InventoryCountApprove,
+    description: 'Approve and post stock counts',
   },
   {
     key: Permission.PurchasesRead,
@@ -205,6 +210,7 @@ export const SYSTEM_ROLE_DEFINITIONS: ReadonlyArray<{
       Permission.InventoryAdjust,
       Permission.InventoryTransfer,
       Permission.InventoryCount,
+      Permission.InventoryCountApprove,
       Permission.ReportsView,
     ],
   },

@@ -1584,6 +1584,227 @@ to the canonical permission catalog. The Sales system role receives both permiss
 
 Existing databases should run the seed command after deployment so new permissions and system-role mappings are synchronized.
 
+## Stock counts
+
+Stock counts implement warehouse physical-count sessions with paginated counting, review, and atomic variance posting.
+
+Endpoints:
+
+```text
+GET  /api/v1/stock-counts
+GET  /api/v1/stock-counts/form-options
+GET  /api/v1/stock-counts/:id
+GET  /api/v1/stock-counts/:id/lines
+POST /api/v1/stock-counts
+POST /api/v1/stock-counts/:id/start
+PUT  /api/v1/stock-counts/:id/lines
+POST /api/v1/stock-counts/:id/submit
+POST /api/v1/stock-counts/:id/approve-and-post
+```
+
+Permissions:
+
+```text
+inventory.count
+inventory.count.approve
+```
+
+Creation, starting, line counting, and submission require `inventory.count`.
+
+Approval and posting require the separate `inventory.count.approve` permission.
+
+### Workflow
+
+```text
+draft
+  ↓ start + snapshot
+counting
+  ↓ all lines counted
+submitted
+  ↓ approve and post
+posted
+```
+
+`cancelled` is retained in the status model for a future controlled cancellation workflow; Group 18 does not expose an arbitrary cancellation endpoint.
+
+### Snapshot model
+
+Creating a draft does not snapshot inventory.
+
+Starting a count:
+
+1. locks the stock-count row
+2. acquires the warehouse inventory advisory lock
+3. verifies no other active count exists for the warehouse
+4. verifies the warehouse is active
+5. rejects warehouses with outstanding reservations
+6. captures the database timestamp
+7. snapshots every trackable inventory balance
+8. records expected quantity and average unit cost for each product
+9. transitions the session to `counting`
+
+The snapshot line stores:
+
+```text
+productId
+expectedQuantity
+snapshotUnitCost
+countedQuantity
+varianceQuantity
+balanceBefore
+balanceAfter
+movementId
+```
+
+An empty warehouse cannot be started because the Angular workflow requires at least one count line.
+
+### Paginated counting
+
+Count lines are server-backed and paginated.
+
+The line endpoint supports:
+
+```text
+page
+pageSize
+search
+sort
+direction
+varianceOnly
+```
+
+Search covers SKU and product name.
+
+Supported line sort fields:
+
+```text
+productName
+sku
+expectedQuantity
+countedQuantity
+varianceQuantity
+```
+
+Only the `counting` state accepts counted-quantity updates.
+
+Counted quantity may be zero but cannot be negative.
+
+The backend persists authoritative variance:
+
+```text
+varianceQuantity = countedQuantity - expectedQuantity
+```
+
+Angular never supplies the variance.
+
+### Submission
+
+Submission requires every snapshot line to have a counted quantity.
+
+After transition to `submitted`, counted and variance quantities are immutable.
+
+### Warehouse-freeze concurrency policy
+
+Group 18 uses a strict warehouse freeze rather than movement reconciliation.
+
+While a count is `counting` or `submitted`:
+
+- physical stock movements in that warehouse are blocked
+- new inventory reservations are blocked
+- transfers touching the warehouse are blocked
+- receipts, adjustments, dispatches, and returns are blocked
+
+The stock-movement service and PostgreSQL both enforce the freeze.
+
+Warehouse-level transaction advisory locks serialize count start/post against inventory operations.
+
+Sales confirmation also checks the same warehouse freeze before creating reservations.
+
+A transfer checks both warehouses in deterministic order before posting, avoiding opposite-direction lock ordering.
+
+### Approval and posting
+
+`approve-and-post` runs as one transaction.
+
+Before changing inventory it verifies:
+
+- count status is `submitted`
+- warehouse remains active
+- no reserved quantities exist
+- every line remains counted
+- no unexpected stock movement was created after the snapshot
+- every current on-hand balance still equals its captured expected quantity
+- no line was already posted
+
+For every non-zero variance the backend creates one immutable:
+
+```text
+stock-count
+```
+
+movement.
+
+Movement quantity is the variance itself:
+
+```text
+counted > expected → positive movement
+counted < expected → negative movement
+counted = expected → no movement
+```
+
+The captured average unit cost is supplied to the movement so positive count corrections retain the warehouse inventory cost basis.
+
+Movement reference:
+
+```text
+type: stock-count
+number: CNT-...
+referencePath: /stock-counts/:id
+```
+
+Each non-zero variance line records:
+
+```text
+movementId
+balanceBefore
+balanceAfter
+```
+
+Zero-variance lines intentionally create no movement.
+
+If any validation or movement fails, the entire approval transaction rolls back.
+
+### Database protection
+
+PostgreSQL additionally enforces:
+
+- only one active count per warehouse
+- non-negative counted quantities
+- authoritative variance formula
+- immutable expected snapshot fields
+- counted quantities locked after submission
+- posted count and line immutability
+- non-zero posted variances require movement links
+- zero variances cannot have movements
+- movement inserts blocked during an active count except the count's own posting movement
+- reservation changes blocked during an active count
+
+Corrections after posting require a new authorized inventory transaction instead of rewriting count history.
+
+### RBAC synchronization
+
+Group 18 adds:
+
+```text
+inventory.count.approve
+```
+
+to the canonical permission catalog.
+
+Inventory Manager receives count approval. Warehouse Staff retains `inventory.count` without approval authority.
+
+Existing databases should run the seed command after deployment.
+
 ## Users and access control
 
 User, role, and permission administration is protected by `user.manage`.
