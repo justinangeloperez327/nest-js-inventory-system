@@ -13,11 +13,12 @@
     "target": "ES2023",
     "sourceMap": true,
     "outDir": "./dist",
-    "baseUrl": "./",
     "incremental": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "strict": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   }
 }

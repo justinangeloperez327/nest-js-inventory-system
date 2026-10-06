@@ -1533,7 +1533,8 @@ export class SalesOrdersService {
                     order.warehouseId,
                   type: 'return-in',
                   quantityChange: quantity,
-                  ...(unitCost !== null
+                  ...(unitCost !== null &&
+                  unitCost !== undefined
                     ? {
                         unitCost: Number(
                           unitCost.toString(),

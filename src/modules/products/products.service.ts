@@ -359,6 +359,9 @@ export class ProductsService {
           const after =
             this.toDetail(
               updated as ProductRecord,
+              await this.settings.currencyCodeInTransaction(
+                tx,
+              ),
             );
 
           await this.audit.recordInTransaction(
