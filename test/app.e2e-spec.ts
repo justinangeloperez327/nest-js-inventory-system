@@ -52,12 +52,11 @@ describe('API HTTP contract (e2e)', () => {
           provide: AuthService,
           useValue: auth,
         },
-        {
-          provide: AccessTokenGuard,
-          useValue: accessTokenGuard,
-        },
       ],
-    }).compile();
+    })
+      .overrideGuard(AccessTokenGuard)
+      .useValue(accessTokenGuard)
+      .compile();
 
     app = moduleRef.createNestApplication();
     app.use(requestContextMiddleware);
@@ -88,7 +87,7 @@ describe('API HTTP contract (e2e)', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    await app?.close();
   });
 
   it('serves liveness and preserves a caller-supplied request ID', async () => {

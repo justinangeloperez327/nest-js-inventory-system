@@ -10,6 +10,6 @@ import { PasswordService } from './password.service.js';
   imports: [JwtModule.register({})],
   controllers: [AuthController],
   providers: [AuthService, AccessTokenGuard, PasswordService],
-  exports: [AccessTokenGuard, PasswordService],
+  exports: [JwtModule, AccessTokenGuard, PasswordService],
 })
 export class AuthModule {}
