@@ -40,8 +40,8 @@ export const Permission = {
   PurchasesApprove: 'purchase.approve',
   PurchasesReceive: 'purchase.receive',
 
-  CustomersRead: 'sales.view',
-  CustomersManage: 'sales.create',
+  CustomersRead: 'customer.view',
+  CustomersManage: 'customer.manage',
 
   SalesRead: 'sales.view',
   SalesCreate: 'sales.create',
@@ -126,6 +126,14 @@ export const PERMISSION_DEFINITIONS: ReadonlyArray<{
   {
     key: Permission.PurchasesReceive,
     description: 'Receive purchase orders',
+  },
+  {
+    key: Permission.CustomersRead,
+    description: 'View customers',
+  },
+  {
+    key: Permission.CustomersManage,
+    description: 'Manage customers',
   },
   {
     key: Permission.SalesRead,
@@ -227,6 +235,8 @@ export const SYSTEM_ROLE_DEFINITIONS: ReadonlyArray<{
       Permission.DashboardView,
       Permission.ProductsRead,
       Permission.InventoryRead,
+      Permission.CustomersRead,
+      Permission.CustomersManage,
       Permission.SalesRead,
       Permission.SalesCreate,
     ],
@@ -239,6 +249,7 @@ export const SYSTEM_ROLE_DEFINITIONS: ReadonlyArray<{
       Permission.CategoriesRead,
       Permission.ProductsRead,
       Permission.SuppliersRead,
+      Permission.CustomersRead,
       Permission.InventoryRead,
       Permission.PurchasesRead,
       Permission.SalesRead,

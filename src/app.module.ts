@@ -11,6 +11,7 @@ import { GoodsReceiptsModule } from './modules/goods-receipts/goods-receipts.mod
 import { AccessControlModule } from './modules/access-control/access-control.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { CategoriesModule } from './modules/categories/categories.module.js';
+import { CustomersModule } from './modules/customers/customers.module.js';
 import { InventoryModule } from './modules/inventory/inventory.module.js';
 import { InventoryAdjustmentsModule } from './modules/inventory-adjustments/inventory-adjustments.module.js';
 import { InventoryTransfersModule } from './modules/inventory-transfers/inventory-transfers.module.js';
@@ -39,6 +40,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module.js';
     AccessControlModule,
     UsersModule,
     CategoriesModule,
+    CustomersModule,
     UnitsModule,
     ProductsModule,
     WarehousesModule,

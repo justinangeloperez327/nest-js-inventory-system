@@ -1242,6 +1242,110 @@ postedAt
 
 The default Angular sort is `createdAt desc`.
 
+## Customers
+
+Customers are sales master data. Sales orders remain a separate transactional domain implemented in Group 17.
+
+Endpoints:
+
+```text
+GET   /api/v1/customers
+GET   /api/v1/customers/:id
+POST  /api/v1/customers
+PUT   /api/v1/customers/:id
+PATCH /api/v1/customers/:id/status
+```
+
+Permissions:
+
+```text
+customer.view
+customer.manage
+```
+
+List/detail require `customer.view`. Create, update, activate, and deactivate require `customer.manage`.
+
+### Customer fields
+
+```text
+code
+name
+contactName
+email
+phone
+taxNumber
+addressLine1
+addressLine2
+city
+stateProvince
+postalCode
+countryCode
+active
+createdAt
+updatedAt
+```
+
+Validation and normalization:
+
+- code is required, uppercased, max 50 characters, and unique
+- name is required, max 200 characters
+- contact name max 150 characters
+- email is normalized to lowercase and validated
+- phone max 50 characters
+- tax number is normalized to uppercase and unique when supplied
+- address lines max 250 characters
+- city/state max 100 characters
+- postal code max 30 characters
+- country code is optional and must be a two-letter uppercase code
+
+### Search and filtering
+
+The list supports:
+
+```text
+page
+pageSize
+search
+sort
+direction
+active
+```
+
+Search covers code, name, contact name, email, and phone.
+
+Supported sort fields:
+
+```text
+name
+code
+contactName
+email
+countryCode
+updatedAt
+createdAt
+```
+
+The Angular customer list defaults to active customers sorted by `name asc`.
+
+### Lifecycle
+
+Customers use activation/deactivation rather than hard deletion.
+
+Inactive customers remain valid historical identities. Group 17 must prevent inactive customers from being selected for new sales orders while retaining all existing order references.
+
+### RBAC synchronization
+
+Group 16 makes customer permissions first-class in the backend permission catalog:
+
+```text
+customer.view
+customer.manage
+```
+
+The Sales system role receives both permissions and Viewer receives `customer.view`.
+
+After deploying this group to an existing database, run the seed command so the new permission records and system-role mappings are synchronized.
+
 ## Users and access control
 
 User, role, and permission administration is protected by `user.manage`.
