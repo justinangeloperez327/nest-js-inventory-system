@@ -7,6 +7,7 @@ import databaseConfig from './config/database.config.js';
 import { validateEnvironment } from './config/environment.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
+import { GoodsReceiptsModule } from './modules/goods-receipts/goods-receipts.module.js';
 import { AccessControlModule } from './modules/access-control/access-control.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { CategoriesModule } from './modules/categories/categories.module.js';
@@ -47,6 +48,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module.js';
     InventoryTransfersModule,
     SuppliersModule,
     PurchaseOrdersModule,
+    GoodsReceiptsModule,
     HealthModule,
   ],
 })

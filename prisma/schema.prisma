@@ -28,6 +28,8 @@ model User {
   createdPurchaseOrders       PurchaseOrder[]       @relation("PurchaseOrderCreatedBy")
   submittedPurchaseOrders     PurchaseOrder[]       @relation("PurchaseOrderSubmittedBy")
   approvedPurchaseOrders      PurchaseOrder[]       @relation("PurchaseOrderApprovedBy")
+  createdGoodsReceipts        GoodsReceipt[]        @relation("GoodsReceiptCreatedBy")
+  postedGoodsReceipts         GoodsReceipt[]        @relation("GoodsReceiptPostedBy")
 
   @@map("users")
 }
@@ -252,6 +254,7 @@ model StockMovement {
   inventoryAdjustment InventoryAdjustment?
   outboundTransferLine InventoryTransferLine? @relation("InventoryTransferOutboundMovement")
   inboundTransferLine  InventoryTransferLine? @relation("InventoryTransferInboundMovement")
+  goodsReceiptLine      GoodsReceiptLine?      @relation("GoodsReceiptMovement")
 
   @@index([productId, occurredAt])
   @@index([warehouseId, occurredAt])
@@ -426,6 +429,7 @@ model PurchaseOrder {
   submittedBy       User?               @relation("PurchaseOrderSubmittedBy", fields: [submittedByUserId], references: [id], onDelete: Restrict)
   approvedBy        User?               @relation("PurchaseOrderApprovedBy", fields: [approvedByUserId], references: [id], onDelete: Restrict)
   lines             PurchaseOrderLine[]
+  goodsReceipts     GoodsReceipt[]
 
   @@index([supplierId, orderDate])
   @@index([warehouseId, orderDate])
@@ -448,8 +452,61 @@ model PurchaseOrderLine {
   createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   product          Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  goodsReceiptLines GoodsReceiptLine[]
 
   @@unique([purchaseOrderId, productId])
   @@index([productId])
   @@map("purchase_order_lines")
+}
+
+
+enum GoodsReceiptStatus {
+  DRAFT
+  POSTED
+  CANCELLED
+}
+
+model GoodsReceipt {
+  id                        String             @id @default(uuid()) @db.Uuid
+  number                    String             @unique
+  purchaseOrderId           String             @map("purchase_order_id") @db.Uuid
+  receiptDate               DateTime           @map("receipt_date") @db.Date
+  supplierDeliveryReference String?            @map("supplier_delivery_reference")
+  notes                     String?
+  status                    GoodsReceiptStatus @default(DRAFT)
+  createdByUserId           String             @map("created_by_user_id") @db.Uuid
+  postedByUserId            String?            @map("posted_by_user_id") @db.Uuid
+  postedAt                  DateTime?          @map("posted_at") @db.Timestamptz(3)
+  createdAt                 DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                 DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  purchaseOrder             PurchaseOrder      @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  createdBy                 User               @relation("GoodsReceiptCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  postedBy                  User?              @relation("GoodsReceiptPostedBy", fields: [postedByUserId], references: [id], onDelete: Restrict)
+  lines                     GoodsReceiptLine[]
+
+  @@index([purchaseOrderId, receiptDate])
+  @@index([status, receiptDate])
+  @@index([createdByUserId])
+  @@index([postedByUserId])
+  @@index([createdAt])
+  @@map("goods_receipts")
+}
+
+model GoodsReceiptLine {
+  id                     String            @id @default(uuid()) @db.Uuid
+  goodsReceiptId         String            @map("goods_receipt_id") @db.Uuid
+  purchaseOrderLineId    String            @map("purchase_order_line_id") @db.Uuid
+  quantityReceived       Decimal           @map("quantity_received") @db.Decimal(19, 4)
+  quantityReceivedBefore Decimal?          @map("quantity_received_before") @db.Decimal(19, 4)
+  balanceBefore          Decimal?          @map("balance_before") @db.Decimal(19, 4)
+  balanceAfter           Decimal?          @map("balance_after") @db.Decimal(19, 4)
+  movementId             String?           @unique @map("movement_id") @db.Uuid
+  createdAt              DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  goodsReceipt           GoodsReceipt      @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+  purchaseOrderLine      PurchaseOrderLine @relation(fields: [purchaseOrderLineId], references: [id], onDelete: Restrict)
+  movement               StockMovement?    @relation("GoodsReceiptMovement", fields: [movementId], references: [id], onDelete: Restrict)
+
+  @@unique([goodsReceiptId, purchaseOrderLineId])
+  @@index([purchaseOrderLineId])
+  @@map("goods_receipt_lines")
 }

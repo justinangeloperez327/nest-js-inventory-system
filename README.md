@@ -959,7 +959,7 @@ Permissions:
 - `purchase.view` — list, detail, form options
 - `purchase.create` — supplier/product lookup, create, edit, submit
 - `purchase.approve` — approve submitted purchase orders
-- `purchase.receive` — reserved for Group 15 receiving
+- `purchase.receive` — receive approved purchase orders
 
 ### Workflow
 
@@ -1059,9 +1059,9 @@ This prevents stale drafts or concurrent requests from bypassing the workflow.
 
 ### Receiving boundary
 
-Group 14 persists `quantityReceived` on each line and the statuses `partially-received` / `received`, but does not mutate them through the purchasing API.
+The purchasing API persists `quantityReceived` and receiving states but does not mutate them directly; the Goods Receiving module owns those updates.
 
-Database guards are already prepared for Group 15:
+Database guards support the receiving workflow:
 
 - commercial line fields stay immutable after submission
 - received quantity can only increase
@@ -1078,6 +1078,169 @@ GET /api/v1/suppliers/:id/purchase-history
 ```
 
 now reads actual purchase orders and returns number, dates, status, subtotal as `totalAmount`, pagination, and configured currency code.
+
+## Goods receiving
+
+Goods receipts post physical supplier deliveries against approved purchase orders.
+
+Endpoints:
+
+```text
+GET  /api/v1/goods-receipts
+GET  /api/v1/goods-receipts/form-options
+GET  /api/v1/goods-receipts/purchase-order-options?search=...
+GET  /api/v1/goods-receipts/purchase-orders/:purchaseOrderId/context
+GET  /api/v1/goods-receipts/:id
+POST /api/v1/goods-receipts
+PUT  /api/v1/goods-receipts/:id
+POST /api/v1/goods-receipts/:id/post
+```
+
+The entire feature requires `purchase.receive`.
+
+### Receipt workflow
+
+```text
+approved / partially-received PO
+        ↓
+create receipt draft
+        ↓
+enter physical received quantities
+        ↓
+post receipt
+        ↓
+lock receipt + purchase order
+        ↓
+revalidate current PO remaining quantities
+        ↓
+create receipt stock movements
+        ↓
+increase PO quantityReceived values
+        ↓
+update PO status
+        ↓
+mark receipt posted
+        ↓
+commit
+```
+
+Draft receipts do not change inventory.
+
+Only purchase orders in `approved` or `partially-received` status are eligible. The receipt warehouse is inherited from the PO and cannot be changed on the receipt.
+
+Once a receipt draft exists, its `purchaseOrderId` is immutable.
+
+### Partial receiving
+
+The PO context endpoint returns:
+
+```text
+quantityOrdered
+quantityReceived
+quantityRemaining
+```
+
+for each PO line.
+
+A receipt request includes only positive lines:
+
+```text
+purchaseOrderLineId
+quantityReceived
+```
+
+Each PO line can appear only once per receipt. Draft save validates the currently remaining PO quantity, and posting validates it again after acquiring the purchase-order row lock.
+
+The PO row lock serializes concurrent receipt posting for the same purchase order, preventing two receipts from consuming the same remaining quantity.
+
+### Atomic inventory posting
+
+Each posted receipt line creates an immutable `receipt` stock movement in the PO warehouse.
+
+The PO line commercial `unitPrice` is supplied to the movement as inventory unit cost, so the inventory ledger updates weighted-average cost through the existing Group 10 movement boundary.
+
+Each receipt line preserves:
+
+```text
+quantityReceivedBefore
+balanceBefore
+balanceAfter
+movementId
+```
+
+The movement reference is:
+
+```text
+type: goods-receipt
+number: GRN-...
+referencePath: /receiving/:id
+```
+
+All receipt lines are applied in deterministic product order to reduce inventory-row deadlock risk.
+
+If any line, movement, PO update, or status transition fails, the complete posting transaction rolls back.
+
+### Purchase-order status synchronization
+
+After posting all receipt lines:
+
+```text
+any ordered quantity remains
+  → partially-received
+
+all ordered quantity received
+  → received
+```
+
+Received quantities never exceed ordered quantities and can only increase.
+
+### Receipt lifecycle
+
+Goods receipt statuses are:
+
+```text
+draft
+posted
+cancelled
+```
+
+The current public API exposes draft creation/editing and posting. `cancelled` remains reserved for a future controlled cancellation workflow.
+
+Posted receipts and their lines are immutable at both API and PostgreSQL levels. Corrections must use an explicit authorized inventory transaction rather than rewriting receipt history.
+
+### Receipt list queries
+
+The list endpoint supports:
+
+```text
+page
+pageSize
+search
+sort
+direction
+purchaseOrderId
+warehouseId
+status
+dateFrom
+dateTo
+```
+
+Search covers receipt number, supplier delivery reference, PO number, supplier code/name, and warehouse code/name.
+
+Supported sort fields:
+
+```text
+createdAt
+number
+purchaseOrderNumber
+supplierName
+warehouseName
+receiptDate
+status
+postedAt
+```
+
+The default Angular sort is `createdAt desc`.
 
 ## Users and access control
 
