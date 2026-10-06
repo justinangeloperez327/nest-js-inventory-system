@@ -11,6 +11,7 @@ import { AppModule } from './app.module.js';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter.js';
 import { requestContextMiddleware } from './common/middleware/request-context.middleware.js';
 import { validationErrorsToFields } from './common/utils/validation-errors.util.js';
+import { setupOpenApi } from './openapi/openapi.js';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
@@ -26,6 +27,12 @@ async function bootstrap(): Promise<void> {
     config.get<string[]>('app.corsOrigins') ?? [
       'http://localhost:4200',
     ];
+  const openApiEnabled =
+    config.get<boolean>('app.openApiEnabled') ?? true;
+  const openApiPath =
+    config.get<string>('app.openApiPath') ?? 'docs';
+  const openApiVersion =
+    config.get<string>('app.openApiVersion') ?? '1.0.0';
 
   app.use(requestContextMiddleware);
   app.setGlobalPrefix(apiPrefix);
@@ -59,12 +66,28 @@ async function bootstrap(): Promise<void> {
   app.useGlobalFilters(new HttpExceptionFilter());
   app.enableShutdownHooks();
 
+  if (openApiEnabled) {
+    setupOpenApi(app, {
+      appName,
+      apiPrefix,
+      path: openApiPath,
+      version: openApiVersion,
+    });
+  }
+
   await app.listen(port, host);
 
   Logger.log(
     `${appName} listening on http://${host}:${port}/${apiPrefix}`,
     'Bootstrap',
   );
+
+  if (openApiEnabled) {
+    Logger.log(
+      `OpenAPI documentation available at http://${host}:${port}/${apiPrefix}/${openApiPath}`,
+      'Bootstrap',
+    );
+  }
 }
 
 await bootstrap();
