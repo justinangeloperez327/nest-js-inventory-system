@@ -79,7 +79,7 @@ npm run docker:down
 
 The PostgreSQL data directory is persisted in the `postgres_data` named volume. `docker compose down` keeps the database; use `docker compose down -v` only when you intentionally want to delete local database data.
 
-The production `runtime` image is multi-stage and contains only production Node dependencies plus the compiled `dist/` output. The API runs as the non-root Node user, uses a read-only root filesystem in Compose, drops Linux capabilities, and exposes an application readiness health check.
+The production `runtime` image is multi-stage and contains only production Node dependencies plus the compiled `dist/` output. The API runs as the non-root Node user, uses a read-only root filesystem in Compose, drops Linux capabilities, and exposes an application readiness health check. TypeScript rewrites relative extensions in the generated Prisma client during compilation so the runtime image executes emitted JavaScript only.
 
 A standalone production image can be built with:
 
