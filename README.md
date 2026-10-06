@@ -1943,6 +1943,185 @@ If a user can view the dashboard but lacks one of those domain permissions, that
 
 No dashboard tables or materialized KPI state are introduced in Group 19. Metrics are calculated from current authoritative data.
 
+## Reports
+
+Group 20 provides read-only operational reports over the existing authoritative domain tables.
+
+Endpoints:
+
+```text
+GET /api/v1/reports/options
+GET /api/v1/reports/:id
+GET /api/v1/reports/:id/export
+```
+
+All report endpoints require:
+
+```text
+reports.view
+```
+
+The built-in Sales role now receives `reports.view` so its sales-order and sales-return reports are accessible without granting broader administrative permissions.
+
+### Available reports
+
+```text
+Inventory
+  inventory-balance
+  inventory-valuation
+  stock-movements
+  low-stock
+  out-of-stock
+  adjustments
+  transfers
+  stock-count-variance
+
+Purchasing
+  purchase-history
+  receiving
+  supplier-purchases
+
+Sales
+  sales-orders
+  sales-returns
+```
+
+### Common report contract
+
+Interactive report responses match the Angular report viewer:
+
+```text
+data
+pagination
+summary
+generatedAt
+currencyCode   // valuation/purchasing/sales monetary reports
+```
+
+Pagination:
+
+```text
+page
+pageSize
+totalItems
+totalPages
+```
+
+Common query parameters are:
+
+```text
+page
+pageSize
+search
+sort
+direction
+warehouseId
+movementType
+dateFrom
+dateTo
+```
+
+Each report uses only the filters defined by the Angular report definition. Irrelevant common filter values do not alter a report.
+
+Sort fields are explicitly whitelisted per report. User-provided column names are never interpolated directly into SQL.
+
+### Snapshot consistency
+
+Each interactive report executes inside a PostgreSQL:
+
+```text
+REPEATABLE READ
+READ ONLY
+```
+
+transaction.
+
+Rows, summary metrics, pagination totals, and `generatedAt` therefore describe one coherent committed snapshot.
+
+### Inventory reports
+
+`inventory-balance` reports current on-hand, reserved, available, and reorder quantities by SKU and warehouse.
+
+`inventory-valuation` uses:
+
+```text
+inventoryValue = quantityOnHand × weightedAverageCost
+```
+
+and reports the configured application currency.
+
+`stock-movements` reads the immutable movement ledger and supports movement type/date filters.
+
+`low-stock` uses:
+
+```text
+available > 0
+available <= reorderPoint
+shortage = reorderPoint - available
+```
+
+`out-of-stock` uses:
+
+```text
+available <= 0
+```
+
+where:
+
+```text
+available = quantityOnHand - quantityReserved
+```
+
+`adjustments` reports posted adjustments only and exposes signed quantity change.
+
+`transfers` reports transfer documents and line counts across draft, posted, and cancelled states.
+
+`stock-count-variance` reports non-zero variance lines from posted physical counts only.
+
+### Purchasing reports
+
+`purchase-history` reports purchase orders across workflow states. The `totalPurchased` summary excludes cancelled orders.
+
+`receiving` reports posted goods receipts only, including receipt count, received-line count, and total received quantity.
+
+`supplier-purchases` groups purchase activity by supplier. Purchased value excludes cancelled purchase orders.
+
+### Sales reports
+
+`sales-orders` reports sales documents across workflow states.
+
+Its summary includes:
+
+```text
+orderCount
+dispatchedCount
+totalSalesValue
+```
+
+`dispatchedCount` includes dispatched and completed orders. `totalSalesValue` excludes cancelled orders.
+
+`sales-returns` reports immutable return documents with line count and returned quantity.
+
+### CSV export
+
+Every report supports:
+
+```text
+GET /api/v1/reports/:id/export?format=csv
+```
+
+The CSV export uses the same filters and sort order as the interactive report and exports all matching rows rather than the current page.
+
+Safety controls:
+
+- maximum 50,000 rows per export
+- oversized exports return `REPORT_EXPORT_TOO_LARGE`
+- CSV cells are RFC-style quoted when required
+- text beginning with spreadsheet formula characters (`=`, `+`, `-`, `@`) is escaped before export
+- UTF-8 BOM is included for spreadsheet compatibility
+
+No reporting tables, cached totals, or materialized report state are introduced in Group 20.
+
 ## Users and access control
 
 User, role, and permission administration is protected by `user.manage`.

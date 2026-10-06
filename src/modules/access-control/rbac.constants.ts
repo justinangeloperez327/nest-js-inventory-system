@@ -257,6 +257,7 @@ export const SYSTEM_ROLE_DEFINITIONS: ReadonlyArray<{
       Permission.SalesCreate,
       Permission.SalesDispatch,
       Permission.SalesReturn,
+      Permission.ReportsView,
     ],
   },
   {
