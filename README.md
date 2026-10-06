@@ -1805,6 +1805,144 @@ Inventory Manager receives count approval. Warehouse Staff retains `inventory.co
 
 Existing databases should run the seed command after deployment.
 
+## Dashboard
+
+The dashboard is a read-only operational snapshot built from authoritative inventory, purchasing, receiving, and movement data.
+
+Endpoint:
+
+```text
+GET /api/v1/dashboard
+```
+
+The endpoint requires:
+
+```text
+dashboard.view
+```
+
+The response matches the Angular dashboard contract:
+
+```text
+generatedAt
+metrics
+stockRisks
+pendingPurchaseOrders
+pendingReceipts
+recentMovements
+```
+
+### Snapshot consistency
+
+Dashboard queries execute inside a PostgreSQL `REPEATABLE READ` transaction.
+
+The generated timestamp and all KPI/detail queries therefore represent one coherent database snapshot instead of independently observing different committed states while the page is loading.
+
+### KPI definitions
+
+```text
+totalProducts
+  active product master records
+
+totalSkus
+  distinct active, trackable products represented
+  in active-warehouse inventory balances
+
+totalWarehouses
+  active warehouses
+
+lowStockProducts
+  distinct products with at least one active-warehouse
+  available balance > 0 and <= reorder point
+
+outOfStockProducts
+  distinct products with at least one active-warehouse
+  available balance <= 0
+
+pendingPurchaseOrders
+  draft + submitted + approved + partially-received POs
+
+pendingReceipts
+  approved + partially-received POs requiring receiving work
+
+inventoryValue
+  SUM(quantityOnHand × weightedAverageCost)
+  across active trackable inventory in active warehouses
+```
+
+Stock risk is based on:
+
+```text
+available = quantityOnHand - quantityReserved
+```
+
+The stock-risk table returns the 10 highest-priority warehouse/product risks, with out-of-stock balances first.
+
+### Pending purchasing work
+
+The dashboard returns up to eight purchase orders requiring attention.
+
+Priority order is:
+
+```text
+submitted
+draft
+approved
+partially-received
+```
+
+Expected date and creation time provide deterministic secondary ordering.
+
+### Pending receiving work
+
+Approved and partially received purchase orders are receiving workload.
+
+If a PO already has a draft goods receipt, the dashboard uses that receipt's number and ID and reports the item as `in-progress`.
+
+Otherwise the PO itself represents a `pending` receiving item.
+
+Partially received POs are also considered `in-progress`.
+
+### Recent movements
+
+The dashboard returns the latest 10 stock movements using the canonical movement types:
+
+```text
+receipt
+sale
+transfer-in
+transfer-out
+adjustment-in
+adjustment-out
+return-in
+return-out
+stock-count
+```
+
+The movement quantity is the authoritative signed ledger quantity, and the reference is the originating document number when available.
+
+### Detail-level authorization
+
+`dashboard.view` authorizes aggregate dashboard KPIs.
+
+Detailed sections retain their domain boundaries server-side:
+
+```text
+stockRisks
+recentMovements
+  → inventory.view
+
+pendingPurchaseOrders
+  → purchase.view
+
+pendingReceipts
+  → purchase.receive
+```
+
+If a user can view the dashboard but lacks one of those domain permissions, that detailed collection is returned empty. This prevents Angular presentation rules from becoming the only authorization boundary.
+
+No dashboard tables or materialized KPI state are introduced in Group 19. Metrics are calculated from current authoritative data.
+
 ## Users and access control
 
 User, role, and permission administration is protected by `user.manage`.
