@@ -12,6 +12,7 @@ import {
 } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import { SystemRole } from '../access-control/rbac.constants.js';
+import { AuditService } from '../audit/audit.service.js';
 import { PasswordService } from '../auth/password.service.js';
 import type { CreateUserDto } from './dto/create-user.dto.js';
 import type { ResetUserPasswordDto } from './dto/reset-user-password.dto.js';
@@ -25,6 +26,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordService,
+    private readonly audit: AuditService,
   ) {}
 
   async list(query: UserListQueryDto) {
@@ -90,54 +92,135 @@ export class UsersService {
     return this.toUser(user);
   }
 
-  async create(dto: CreateUserDto) {
+  async create(
+    dto: CreateUserDto,
+    actorUserId: string,
+  ) {
     await this.assertEmailAvailable(dto.email);
     await this.assertRolesExist(dto.roleIds);
 
     const passwordHash = await this.passwords.hash(dto.password);
 
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email,
-        passwordHash,
-        firstName: dto.firstName.trim(),
-        lastName: dto.lastName.trim(),
-        roles: {
-          create: dto.roleIds.map((roleId) => ({ roleId })),
+    const user =
+      await this.prisma.$transaction(
+        async (tx) => {
+          const created =
+            await tx.user.create({
+              data: {
+                email: dto.email,
+                passwordHash,
+                firstName:
+                  dto.firstName.trim(),
+                lastName:
+                  dto.lastName.trim(),
+                roles: {
+                  create:
+                    dto.roleIds.map(
+                      (roleId) => ({
+                        roleId,
+                      }),
+                    ),
+                },
+              },
+              include:
+                this.userInclude(),
+            });
+
+          const safe =
+            this.toUser(created);
+
+          await this.audit.recordInTransaction(
+            tx,
+            {
+              userId: actorUserId,
+              action: 'user.created',
+              entityType: 'user',
+              entityId: created.id,
+              after: safe,
+            },
+          );
+
+          return created;
         },
-      },
-      include: this.userInclude(),
-    });
+      );
 
     return this.toUser(user);
   }
 
-  async update(id: string, dto: UpdateUserDto) {
+  async update(
+    id: string,
+    dto: UpdateUserDto,
+    actorUserId: string,
+  ) {
     const current = await this.requireUser(id);
+    const before = await this.get(id);
 
     if (dto.email && dto.email !== current.email) {
       await this.assertEmailAvailable(dto.email, id);
     }
 
-    const user = await this.prisma.user.update({
-      where: { id },
-      data: {
-        ...(dto.email !== undefined ? { email: dto.email } : {}),
-        ...(dto.firstName !== undefined
-          ? { firstName: dto.firstName.trim() }
-          : {}),
-        ...(dto.lastName !== undefined
-          ? { lastName: dto.lastName.trim() }
-          : {}),
-      },
-      include: this.userInclude(),
-    });
+    const user =
+      await this.prisma.$transaction(
+        async (tx) => {
+          const updated =
+            await tx.user.update({
+              where: { id },
+              data: {
+                ...(dto.email !==
+                undefined
+                  ? {
+                      email:
+                        dto.email,
+                    }
+                  : {}),
+                ...(dto.firstName !==
+                undefined
+                  ? {
+                      firstName:
+                        dto.firstName.trim(),
+                    }
+                  : {}),
+                ...(dto.lastName !==
+                undefined
+                  ? {
+                      lastName:
+                        dto.lastName.trim(),
+                    }
+                  : {}),
+              },
+              include:
+                this.userInclude(),
+            });
+
+          const after =
+            this.toUser(updated);
+
+          await this.audit.recordInTransaction(
+            tx,
+            {
+              userId: actorUserId,
+              action: 'user.updated',
+              entityType: 'user',
+              entityId: id,
+              before,
+              after,
+            },
+          );
+
+          return updated;
+        },
+      );
 
     return this.toUser(user);
   }
 
-  async setStatus(id: string, dto: SetUserStatusDto) {
+  async setStatus(
+    id: string,
+    dto: SetUserStatusDto,
+    actorUserId: string,
+  ) {
     await this.requireUser(id);
+    const before = await this.get(id);
 
     if (!dto.isActive) {
       await this.ensureAdministratorContinuity(id, false);
@@ -150,15 +233,41 @@ export class UsersService {
         include: this.userInclude(),
       });
 
+      let revokedSessionCount = 0;
+
       if (!dto.isActive) {
-        await tx.refreshToken.updateMany({
-          where: {
-            userId: id,
-            revokedAt: null,
-          },
-          data: { revokedAt: new Date() },
-        });
+        const revoked =
+          await tx.refreshToken.updateMany({
+            where: {
+              userId: id,
+              revokedAt: null,
+            },
+            data: {
+              revokedAt: new Date(),
+            },
+          });
+        revokedSessionCount =
+          revoked.count;
       }
+
+      const after =
+        this.toUser(updated);
+
+      await this.audit.recordInTransaction(
+        tx,
+        {
+          userId: actorUserId,
+          action:
+            'user.status_changed',
+          entityType: 'user',
+          entityId: id,
+          before,
+          after: {
+            ...after,
+            revokedSessionCount,
+          },
+        },
+      );
 
       return updated;
     });
@@ -166,41 +275,94 @@ export class UsersService {
     return this.toUser(user);
   }
 
-  async setRoles(id: string, dto: SetUserRolesDto) {
+  async setRoles(
+    id: string,
+    dto: SetUserRolesDto,
+    actorUserId: string,
+  ) {
     await this.requireUser(id);
+    const before = await this.get(id);
     await this.assertRolesExist(dto.roleIds);
     await this.ensureAdministratorContinuity(id, undefined, dto.roleIds);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.userRole.deleteMany({ where: { userId: id } });
       await tx.userRole.createMany({
-        data: dto.roleIds.map((roleId) => ({
-          userId: id,
-          roleId,
-        })),
+        data: dto.roleIds.map(
+          (roleId) => ({
+            userId: id,
+            roleId,
+          }),
+        ),
       });
+
+      await this.audit.recordInTransaction(
+        tx,
+        {
+          userId: actorUserId,
+          action:
+            'user.roles_changed',
+          entityType: 'user',
+          entityId: id,
+          before: {
+            roleIds:
+              before.roles.map(
+                (role) => role.id,
+              ),
+          },
+          after: {
+            roleIds: dto.roleIds,
+          },
+        },
+      );
     });
 
     return this.get(id);
   }
 
-  async resetPassword(id: string, dto: ResetUserPasswordDto) {
+  async resetPassword(
+    id: string,
+    dto: ResetUserPasswordDto,
+    actorUserId: string,
+  ) {
     await this.requireUser(id);
     const passwordHash = await this.passwords.hash(dto.password);
 
-    await this.prisma.$transaction([
-      this.prisma.user.update({
-        where: { id },
-        data: { passwordHash },
-      }),
-      this.prisma.refreshToken.updateMany({
-        where: {
-          userId: id,
-          revokedAt: null,
-        },
-        data: { revokedAt: new Date() },
-      }),
-    ]);
+    await this.prisma.$transaction(
+      async (tx) => {
+        await tx.user.update({
+          where: { id },
+          data: { passwordHash },
+        });
+
+        const revoked =
+          await tx.refreshToken.updateMany({
+            where: {
+              userId: id,
+              revokedAt: null,
+            },
+            data: {
+              revokedAt: new Date(),
+            },
+          });
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId: actorUserId,
+            action:
+              'user.password_reset',
+            entityType: 'user',
+            entityId: id,
+            after: {
+              credentialReset: true,
+              revokedSessionCount:
+                revoked.count,
+            },
+          },
+        );
+      },
+    );
 
     return { passwordReset: true };
   }

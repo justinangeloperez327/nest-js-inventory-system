@@ -7,6 +7,7 @@ import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'node:crypto';
 
 import { PrismaService } from '../../database/prisma.service.js';
+import { AuditService } from '../audit/audit.service.js';
 import type { LoginDto } from './dto/login.dto.js';
 import type { AuthSession } from './interfaces/auth-session.interface.js';
 import type { AuthUser } from './interfaces/auth-user.interface.js';
@@ -31,6 +32,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly passwords: PasswordService,
+    private readonly audit: AuditService,
   ) {}
 
   async login(dto: LoginDto): Promise<AuthSession> {
@@ -48,20 +50,43 @@ export class AuthService {
 
     const tokens = await this.prepareTokenPair(user.id, user.email);
 
-    await this.prisma.$transaction([
-      this.prisma.user.update({
-        where: { id: user.id },
-        data: { lastLoginAt: new Date() },
-      }),
-      this.prisma.refreshToken.create({
-        data: {
-          id: tokens.refreshTokenId,
-          userId: user.id,
-          tokenHash: tokens.refreshTokenHash,
-          expiresAt: tokens.refreshExpiresAt,
-        },
-      }),
-    ]);
+    await this.prisma.$transaction(
+      async (tx) => {
+        const loggedInAt = new Date();
+
+        await tx.user.update({
+          where: { id: user.id },
+          data: {
+            lastLoginAt: loggedInAt,
+          },
+        });
+
+        await tx.refreshToken.create({
+          data: {
+            id: tokens.refreshTokenId,
+            userId: user.id,
+            tokenHash:
+              tokens.refreshTokenHash,
+            expiresAt:
+              tokens.refreshExpiresAt,
+          },
+        });
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId: user.id,
+            action: 'auth.login',
+            entityType: 'user',
+            entityId: user.id,
+            after: {
+              email: user.email,
+              loggedInAt,
+            },
+          },
+        );
+      },
+    );
 
     return this.toSession(tokens, this.toAuthUser(user));
   }
@@ -127,15 +152,36 @@ export class AuthService {
   }
 
   async logout(userId: string): Promise<void> {
-    await this.prisma.refreshToken.updateMany({
-      where: {
-        userId,
-        revokedAt: null,
+    await this.prisma.$transaction(
+      async (tx) => {
+        const loggedOutAt = new Date();
+        const revoked =
+          await tx.refreshToken.updateMany({
+            where: {
+              userId,
+              revokedAt: null,
+            },
+            data: {
+              revokedAt: loggedOutAt,
+            },
+          });
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId,
+            action: 'auth.logout',
+            entityType: 'user',
+            entityId: userId,
+            after: {
+              loggedOutAt,
+              revokedSessionCount:
+                revoked.count,
+            },
+          },
+        );
       },
-      data: {
-        revokedAt: new Date(),
-      },
-    });
+    );
   }
 
   private async prepareTokenPair(

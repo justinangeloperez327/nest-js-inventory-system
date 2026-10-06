@@ -48,8 +48,14 @@ export class ProductsController {
 
   @Post()
   @RequirePermissions(Permission.ProductsCreate)
-  create(@Body() dto: ProductUpsertDto) {
-    return this.products.create(dto);
+  create(
+    @Body() dto: ProductUpsertDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.products.create(
+      dto,
+      user.id,
+    );
   }
 
   @Put(':id')
@@ -57,8 +63,13 @@ export class ProductsController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ProductUpsertDto,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.products.update(id, dto);
+    return this.products.update(
+      id,
+      dto,
+      user.id,
+    );
   }
 
   @Patch(':id/status')
@@ -80,6 +91,10 @@ export class ProductsController {
       });
     }
 
-    return this.products.setStatus(id, dto);
+    return this.products.setStatus(
+      id,
+      dto,
+      user.id,
+    );
   }
 }

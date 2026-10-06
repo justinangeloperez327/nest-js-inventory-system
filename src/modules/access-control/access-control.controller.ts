@@ -13,7 +13,9 @@ import {
 } from '@nestjs/common';
 
 import { ListQueryDto } from '../../common/dto/list-query.dto.js';
+import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { AccessTokenGuard } from '../auth/guards/access-token.guard.js';
+import type { AuthUser } from '../auth/interfaces/auth-user.interface.js';
 import { AccessControlService } from './access-control.service.js';
 import { RequirePermissions } from './decorators/permissions.decorator.js';
 import { CreateRoleDto } from './dto/create-role.dto.js';
@@ -41,8 +43,14 @@ export class AccessControlController {
 
   @Post('roles')
   @RequirePermissions(Permission.RolesCreate)
-  createRole(@Body() dto: CreateRoleDto) {
-    return this.access.createRole(dto);
+  createRole(
+    @Body() dto: CreateRoleDto,
+    @CurrentUser() actor: AuthUser,
+  ) {
+    return this.access.createRole(
+      dto,
+      actor.id,
+    );
   }
 
   @Patch('roles/:id')
@@ -50,8 +58,13 @@ export class AccessControlController {
   updateRole(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateRoleDto,
+    @CurrentUser() actor: AuthUser,
   ) {
-    return this.access.updateRole(id, dto);
+    return this.access.updateRole(
+      id,
+      dto,
+      actor.id,
+    );
   }
 
   @Put('roles/:id/permissions')
@@ -59,14 +72,25 @@ export class AccessControlController {
   setPermissions(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SetRolePermissionsDto,
+    @CurrentUser() actor: AuthUser,
   ) {
-    return this.access.setPermissions(id, dto);
+    return this.access.setPermissions(
+      id,
+      dto,
+      actor.id,
+    );
   }
 
   @Delete('roles/:id')
   @RequirePermissions(Permission.RolesDelete)
-  deleteRole(@Param('id', ParseUUIDPipe) id: string) {
-    return this.access.deleteRole(id);
+  deleteRole(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() actor: AuthUser,
+  ) {
+    return this.access.deleteRole(
+      id,
+      actor.id,
+    );
   }
 
   @Get('permissions')

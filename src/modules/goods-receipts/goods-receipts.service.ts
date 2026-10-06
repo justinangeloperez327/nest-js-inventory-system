@@ -13,6 +13,7 @@ import {
 } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import type { Prisma } from '../../generated/prisma/client.js';
+import { AuditService } from '../audit/audit.service.js';
 import { StockMovementsService } from '../stock-movements/stock-movements.service.js';
 import type { GoodsReceiptPurchaseOrderQueryDto } from './dto/goods-receipt-purchase-order-query.dto.js';
 import type { GoodsReceiptQueryDto } from './dto/goods-receipt-query.dto.js';
@@ -125,6 +126,7 @@ export class GoodsReceiptsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly movements: StockMovementsService,
+    private readonly audit: AuditService,
   ) {}
 
   async list(query: GoodsReceiptQueryDto) {
@@ -643,8 +645,32 @@ export class GoodsReceiptsService {
                   ),
               },
             },
-            select: { id: true },
+            select: {
+              id: true,
+              number: true,
+              purchaseOrderId: true,
+              receiptDate: true,
+              supplierDeliveryReference: true,
+              notes: true,
+              status: true,
+            },
           });
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId,
+            action:
+              'goods-receipt.created',
+            entityType:
+              'goods-receipt',
+            entityId: receipt.id,
+            after: {
+              ...receipt,
+              lines: prepared.lines,
+            },
+          },
+        );
 
         return receipt.id;
       },
@@ -656,7 +682,10 @@ export class GoodsReceiptsService {
   async update(
     id: string,
     dto: GoodsReceiptUpsertDto,
+    userId: string,
   ) {
+    const before = await this.get(id);
+
     await this.prisma.$transaction(
       async (tx) => {
         const locked =
@@ -709,6 +738,32 @@ export class GoodsReceiptsService {
             }),
           ),
         });
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId,
+            action:
+              'goods-receipt.updated',
+            entityType:
+              'goods-receipt',
+            entityId: id,
+            before,
+            after: {
+              purchaseOrderId:
+                dto.purchaseOrderId,
+              receiptDate:
+                prepared.receiptDate,
+              supplierDeliveryReference:
+                dto.supplierDeliveryReference ??
+                null,
+              notes:
+                dto.notes ?? null,
+              status: 'draft',
+              lines: prepared.lines,
+            },
+          },
+        );
       },
     );
 
@@ -1022,6 +1077,33 @@ export class GoodsReceiptsService {
             postedByUserId: userId,
           },
         });
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId,
+            action:
+              'goods-receipt.posted',
+            entityType:
+              'goods-receipt',
+            entityId: id,
+            before: {
+              status: 'draft',
+              purchaseOrderStatus:
+                poLock.status.toLowerCase(),
+            },
+            after: {
+              status: 'posted',
+              postedAt: occurredAt,
+              purchaseOrderStatus:
+                hasRemaining
+                  ? 'partially-received'
+                  : 'received',
+              lineCount:
+                receipt.lines.length,
+            },
+          },
+        );
       },
     );
 

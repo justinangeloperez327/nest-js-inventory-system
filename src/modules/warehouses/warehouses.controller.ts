@@ -14,7 +14,9 @@ import {
 import { RequirePermissions } from '../access-control/decorators/permissions.decorator.js';
 import { PermissionsGuard } from '../access-control/guards/permissions.guard.js';
 import { Permission } from '../access-control/rbac.constants.js';
+import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { AccessTokenGuard } from '../auth/guards/access-token.guard.js';
+import type { AuthUser } from '../auth/interfaces/auth-user.interface.js';
 import { WarehouseListQueryDto } from './dto/warehouse-list-query.dto.js';
 import { WarehouseStatusDto } from './dto/warehouse-status.dto.js';
 import { WarehouseUpsertDto } from './dto/warehouse-upsert.dto.js';
@@ -41,8 +43,14 @@ export class WarehousesController {
 
   @Post()
   @RequirePermissions(Permission.WarehousesManage)
-  create(@Body() dto: WarehouseUpsertDto) {
-    return this.warehouses.create(dto);
+  create(
+    @Body() dto: WarehouseUpsertDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.warehouses.create(
+      dto,
+      user.id,
+    );
   }
 
   @Put(':id')
@@ -50,8 +58,13 @@ export class WarehousesController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: WarehouseUpsertDto,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.warehouses.update(id, dto);
+    return this.warehouses.update(
+      id,
+      dto,
+      user.id,
+    );
   }
 
   @Patch(':id/status')
@@ -59,7 +72,12 @@ export class WarehousesController {
   setStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: WarehouseStatusDto,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.warehouses.setStatus(id, dto);
+    return this.warehouses.setStatus(
+      id,
+      dto,
+      user.id,
+    );
   }
 }

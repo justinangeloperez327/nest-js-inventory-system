@@ -9,6 +9,7 @@ import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
 import { GoodsReceiptsModule } from './modules/goods-receipts/goods-receipts.module.js';
 import { AccessControlModule } from './modules/access-control/access-control.module.js';
+import { AuditModule } from './modules/audit/audit.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { CategoriesModule } from './modules/categories/categories.module.js';
 import { CustomersModule } from './modules/customers/customers.module.js';
@@ -40,6 +41,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module.js';
       validate: validateEnvironment,
     }),
     DatabaseModule,
+    AuditModule,
     AuthModule,
     AccessControlModule,
     UsersModule,

@@ -80,11 +80,13 @@ export class StockCountsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: StockCountLinesUpdateDto,
     @Query() query: StockCountLineQueryDto,
+    @CurrentUser() user: AuthUser,
   ) {
     return this.stockCounts.saveLines(
       id,
       dto,
       query,
+      user.id,
     );
   }
 

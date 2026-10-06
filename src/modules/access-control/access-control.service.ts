@@ -12,13 +12,17 @@ import {
   toPaginationWindow,
 } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
+import { AuditService } from '../audit/audit.service.js';
 import type { CreateRoleDto } from './dto/create-role.dto.js';
 import type { SetRolePermissionsDto } from './dto/set-role-permissions.dto.js';
 import type { UpdateRoleDto } from './dto/update-role.dto.js';
 
 @Injectable()
 export class AccessControlService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   async listRoles(query: ListQueryDto) {
     const { skip, take } = toPaginationWindow(query);
@@ -88,63 +92,145 @@ export class AccessControlService {
     return this.toRole(role);
   }
 
-  async createRole(dto: CreateRoleDto) {
+  async createRole(
+    dto: CreateRoleDto,
+    actorUserId: string,
+  ) {
     await this.assertRoleNameAvailable(dto.name);
     await this.assertPermissionsExist(dto.permissionIds);
 
-    const role = await this.prisma.role.create({
-      data: {
-        name: dto.name.trim(),
-        description: dto.description?.trim() || null,
-        permissions: {
-          create: dto.permissionIds.map((permissionId) => ({
-            permissionId,
-          })),
+    const role =
+      await this.prisma.$transaction(
+        async (tx) => {
+          const created =
+            await tx.role.create({
+              data: {
+                name: dto.name.trim(),
+                description:
+                  dto.description?.trim() ||
+                  null,
+                permissions: {
+                  create:
+                    dto.permissionIds.map(
+                      (permissionId) => ({
+                        permissionId,
+                      }),
+                    ),
+                },
+              },
+              include: {
+                permissions: {
+                  include: {
+                    permission: true,
+                  },
+                },
+                _count: {
+                  select: {
+                    users: true,
+                  },
+                },
+              },
+            });
+
+          const safe =
+            this.toRole(created);
+
+          await this.audit.recordInTransaction(
+            tx,
+            {
+              userId: actorUserId,
+              action: 'role.created',
+              entityType: 'role',
+              entityId: created.id,
+              after: safe,
+            },
+          );
+
+          return created;
         },
-      },
-      include: {
-        permissions: {
-          include: { permission: true },
-        },
-        _count: {
-          select: { users: true },
-        },
-      },
-    });
+      );
 
     return this.toRole(role);
   }
 
-  async updateRole(id: string, dto: UpdateRoleDto) {
+  async updateRole(
+    id: string,
+    dto: UpdateRoleDto,
+    actorUserId: string,
+  ) {
     const current = await this.requireMutableRole(id);
+    const before = await this.getRole(id);
 
     if (dto.name && dto.name.trim() !== current.name) {
       await this.assertRoleNameAvailable(dto.name, id);
     }
 
-    const role = await this.prisma.role.update({
-      where: { id },
-      data: {
-        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
-        ...(dto.description !== undefined
-          ? { description: dto.description.trim() || null }
-          : {}),
-      },
-      include: {
-        permissions: {
-          include: { permission: true },
+    const role =
+      await this.prisma.$transaction(
+        async (tx) => {
+          const updated =
+            await tx.role.update({
+              where: { id },
+              data: {
+                ...(dto.name !==
+                undefined
+                  ? {
+                      name:
+                        dto.name.trim(),
+                    }
+                  : {}),
+                ...(dto.description !==
+                undefined
+                  ? {
+                      description:
+                        dto.description.trim() ||
+                        null,
+                    }
+                  : {}),
+              },
+              include: {
+                permissions: {
+                  include: {
+                    permission: true,
+                  },
+                },
+                _count: {
+                  select: {
+                    users: true,
+                  },
+                },
+              },
+            });
+
+          const after =
+            this.toRole(updated);
+
+          await this.audit.recordInTransaction(
+            tx,
+            {
+              userId: actorUserId,
+              action: 'role.updated',
+              entityType: 'role',
+              entityId: id,
+              before,
+              after,
+            },
+          );
+
+          return updated;
         },
-        _count: {
-          select: { users: true },
-        },
-      },
-    });
+      );
 
     return this.toRole(role);
   }
 
-  async setPermissions(id: string, dto: SetRolePermissionsDto) {
+  async setPermissions(
+    id: string,
+    dto: SetRolePermissionsDto,
+    actorUserId: string,
+  ) {
     await this.requireMutableRole(id);
+    const before = await this.getRole(id);
     await this.assertPermissionsExist(dto.permissionIds);
 
     await this.prisma.$transaction(async (tx) => {
@@ -154,19 +240,47 @@ export class AccessControlService {
 
       if (dto.permissionIds.length > 0) {
         await tx.rolePermission.createMany({
-          data: dto.permissionIds.map((permissionId) => ({
-            roleId: id,
-            permissionId,
-          })),
+          data: dto.permissionIds.map(
+            (permissionId) => ({
+              roleId: id,
+              permissionId,
+            }),
+          ),
         });
       }
+
+      await this.audit.recordInTransaction(
+        tx,
+        {
+          userId: actorUserId,
+          action:
+            'role.permissions_changed',
+          entityType: 'role',
+          entityId: id,
+          before: {
+            permissionIds:
+              before.permissions.map(
+                (permission) =>
+                  permission.id,
+              ),
+          },
+          after: {
+            permissionIds:
+              dto.permissionIds,
+          },
+        },
+      );
     });
 
     return this.getRole(id);
   }
 
-  async deleteRole(id: string): Promise<{ deleted: true }> {
+  async deleteRole(
+    id: string,
+    actorUserId: string,
+  ): Promise<{ deleted: true }> {
     const role = await this.requireMutableRole(id);
+    const before = await this.getRole(id);
     const assignments = await this.prisma.userRole.count({
       where: { roleId: role.id },
     });
@@ -178,7 +292,24 @@ export class AccessControlService {
       });
     }
 
-    await this.prisma.role.delete({ where: { id } });
+    await this.prisma.$transaction(
+      async (tx) => {
+        await tx.role.delete({
+          where: { id },
+        });
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId: actorUserId,
+            action: 'role.deleted',
+            entityType: 'role',
+            entityId: id,
+            before,
+          },
+        );
+      },
+    );
 
     return { deleted: true };
   }

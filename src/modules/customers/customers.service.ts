@@ -11,6 +11,7 @@ import {
   toPaginationWindow,
 } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
+import { AuditService } from '../audit/audit.service.js';
 import type { CustomerListQueryDto } from './dto/customer-list-query.dto.js';
 import type { CustomerStatusDto } from './dto/customer-status.dto.js';
 import type { CustomerUpsertDto } from './dto/customer-upsert.dto.js';
@@ -19,6 +20,7 @@ import type { CustomerUpsertDto } from './dto/customer-upsert.dto.js';
 export class CustomersService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
   ) {}
 
   async list(query: CustomerListQueryDto) {
@@ -104,7 +106,10 @@ export class CustomersService {
     return this.toDetail(customer);
   }
 
-  async create(dto: CustomerUpsertDto) {
+  async create(
+    dto: CustomerUpsertDto,
+    userId: string,
+  ) {
     await this.assertUnique(
       dto.code,
       dto.taxNumber,
@@ -112,9 +117,33 @@ export class CustomersService {
 
     try {
       const customer =
-        await this.prisma.customer.create({
-          data: this.toData(dto),
-        });
+        await this.prisma.$transaction(
+          async (tx) => {
+            const created =
+              await tx.customer.create({
+                data: this.toData(dto),
+              });
+
+            const after =
+              this.toDetail(created);
+
+            await this.audit.recordInTransaction(
+              tx,
+              {
+                userId,
+                action:
+                  'customer.created',
+                entityType:
+                  'customer',
+                entityId:
+                  created.id,
+                after,
+              },
+            );
+
+            return created;
+          },
+        );
 
       return this.toDetail(customer);
     } catch (error) {
@@ -126,8 +155,10 @@ export class CustomersService {
   async update(
     id: string,
     dto: CustomerUpsertDto,
+    userId: string,
   ) {
     await this.requireCustomer(id);
+    const before = await this.get(id);
     await this.assertUnique(
       dto.code,
       dto.taxNumber,
@@ -136,10 +167,34 @@ export class CustomersService {
 
     try {
       const customer =
-        await this.prisma.customer.update({
-          where: { id },
-          data: this.toData(dto),
-        });
+        await this.prisma.$transaction(
+          async (tx) => {
+            const updated =
+              await tx.customer.update({
+                where: { id },
+                data: this.toData(dto),
+              });
+
+            const after =
+              this.toDetail(updated);
+
+            await this.audit.recordInTransaction(
+              tx,
+              {
+                userId,
+                action:
+                  'customer.updated',
+                entityType:
+                  'customer',
+                entityId: id,
+                before,
+                after,
+              },
+            );
+
+            return updated;
+          },
+        );
 
       return this.toDetail(customer);
     } catch (error) {
@@ -151,14 +206,43 @@ export class CustomersService {
   async setStatus(
     id: string,
     dto: CustomerStatusDto,
+    userId: string,
   ) {
     await this.requireCustomer(id);
+    const before = await this.get(id);
 
     const customer =
-      await this.prisma.customer.update({
-        where: { id },
-        data: { isActive: dto.active },
-      });
+      await this.prisma.$transaction(
+        async (tx) => {
+          const updated =
+            await tx.customer.update({
+              where: { id },
+              data: {
+                isActive:
+                  dto.active,
+              },
+            });
+
+          const after =
+            this.toDetail(updated);
+
+          await this.audit.recordInTransaction(
+            tx,
+            {
+              userId,
+              action:
+                'customer.status_changed',
+              entityType:
+                'customer',
+              entityId: id,
+              before,
+              after,
+            },
+          );
+
+          return updated;
+        },
+      );
 
     return this.toDetail(customer);
   }

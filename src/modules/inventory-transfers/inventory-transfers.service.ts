@@ -13,6 +13,7 @@ import {
 } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import type { Prisma } from '../../generated/prisma/client.js';
+import { AuditService } from '../audit/audit.service.js';
 import { StockMovementsService } from '../stock-movements/stock-movements.service.js';
 import type { InventoryTransferProductQueryDto } from './dto/inventory-transfer-product-query.dto.js';
 import type { InventoryTransferQueryDto } from './dto/inventory-transfer-query.dto.js';
@@ -103,6 +104,7 @@ export class InventoryTransfersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly movements: StockMovementsService,
+    private readonly audit: AuditService,
   ) {}
 
   async list(query: InventoryTransferQueryDto) {
@@ -506,8 +508,32 @@ export class InventoryTransfersService {
                   ),
                 },
               },
-              select: { id: true },
+              select: {
+                id: true,
+                number: true,
+                sourceWarehouseId: true,
+                destinationWarehouseId: true,
+                notes: true,
+                status: true,
+              },
             });
+
+          await this.audit.recordInTransaction(
+            tx,
+            {
+              userId,
+              action:
+                'inventory-transfer.created',
+              entityType:
+                'inventory-transfer',
+              entityId:
+                transfer.id,
+              after: {
+                ...transfer,
+                lines: dto.lines,
+              },
+            },
+          );
 
           return transfer.id;
         },
@@ -519,7 +545,10 @@ export class InventoryTransfersService {
   async update(
     id: string,
     dto: InventoryTransferUpsertDto,
+    userId: string,
   ) {
+    const before = await this.get(id);
+
     await this.prisma.$transaction(
       async (tx) => {
         await this.lockDraft(tx, id);
@@ -547,6 +576,29 @@ export class InventoryTransfersService {
             quantity: line.quantity,
           })),
         });
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId,
+            action:
+              'inventory-transfer.updated',
+            entityType:
+              'inventory-transfer',
+            entityId: id,
+            before,
+            after: {
+              sourceWarehouseId:
+                dto.sourceWarehouseId,
+              destinationWarehouseId:
+                dto.destinationWarehouseId,
+              notes:
+                dto.notes ?? null,
+              status: 'draft',
+              lines: dto.lines,
+            },
+          },
+        );
       },
     );
 
@@ -851,6 +903,27 @@ export class InventoryTransfersService {
             postedByUserId: userId,
           },
         });
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId,
+            action:
+              'inventory-transfer.posted',
+            entityType:
+              'inventory-transfer',
+            entityId: id,
+            before: {
+              status: 'draft',
+            },
+            after: {
+              status: 'posted',
+              postedAt: occurredAt,
+              lineCount:
+                transfer.lines.length,
+            },
+          },
+        );
       },
     );
 

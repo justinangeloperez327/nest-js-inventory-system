@@ -11,13 +11,17 @@ import {
   toPaginationWindow,
 } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
+import { AuditService } from '../audit/audit.service.js';
 import type { CategoryListQueryDto } from './dto/category-list-query.dto.js';
 import type { CategoryStatusDto } from './dto/category-status.dto.js';
 import type { CategoryUpsertDto } from './dto/category-upsert.dto.js';
 
 @Injectable()
 export class CategoriesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   async list(query: CategoryListQueryDto) {
     const { skip, take } = toPaginationWindow(query);
@@ -89,18 +93,46 @@ export class CategoriesService {
     return this.toCategory(category);
   }
 
-  async create(dto: CategoryUpsertDto) {
+  async create(
+    dto: CategoryUpsertDto,
+    userId: string,
+  ) {
     await this.assertUnique(dto.code, dto.name);
 
     try {
       const category =
-        await this.prisma.category.create({
-          data: {
-            code: dto.code,
-            name: dto.name,
-            description: dto.description ?? null,
+        await this.prisma.$transaction(
+          async (tx) => {
+            const created =
+              await tx.category.create({
+                data: {
+                  code: dto.code,
+                  name: dto.name,
+                  description:
+                    dto.description ?? null,
+                },
+              });
+
+            const after =
+              this.toCategory(created);
+
+            await this.audit.recordInTransaction(
+              tx,
+              {
+                userId,
+                action:
+                  'category.created',
+                entityType:
+                  'category',
+                entityId:
+                  created.id,
+                after,
+              },
+            );
+
+            return created;
           },
-        });
+        );
 
       return this.toCategory(category);
     } catch (error) {
@@ -112,8 +144,10 @@ export class CategoriesService {
   async update(
     id: string,
     dto: CategoryUpsertDto,
+    userId: string,
   ) {
     await this.requireCategory(id);
+    const before = await this.get(id);
     await this.assertUnique(
       dto.code,
       dto.name,
@@ -122,14 +156,39 @@ export class CategoriesService {
 
     try {
       const category =
-        await this.prisma.category.update({
-          where: { id },
-          data: {
-            code: dto.code,
-            name: dto.name,
-            description: dto.description ?? null,
+        await this.prisma.$transaction(
+          async (tx) => {
+            const updated =
+              await tx.category.update({
+                where: { id },
+                data: {
+                  code: dto.code,
+                  name: dto.name,
+                  description:
+                    dto.description ?? null,
+                },
+              });
+
+            const after =
+              this.toCategory(updated);
+
+            await this.audit.recordInTransaction(
+              tx,
+              {
+                userId,
+                action:
+                  'category.updated',
+                entityType:
+                  'category',
+                entityId: id,
+                before,
+                after,
+              },
+            );
+
+            return updated;
           },
-        });
+        );
 
       return this.toCategory(category);
     } catch (error) {
@@ -141,14 +200,41 @@ export class CategoriesService {
   async setStatus(
     id: string,
     dto: CategoryStatusDto,
+    userId: string,
   ) {
     await this.requireCategory(id);
+    const before = await this.get(id);
 
     const category =
-      await this.prisma.category.update({
-        where: { id },
-        data: { isActive: dto.active },
-      });
+      await this.prisma.$transaction(
+        async (tx) => {
+          const updated =
+            await tx.category.update({
+              where: { id },
+              data: {
+                isActive: dto.active,
+              },
+            });
+
+          const after =
+            this.toCategory(updated);
+
+          await this.audit.recordInTransaction(
+            tx,
+            {
+              userId,
+              action:
+                'category.status_changed',
+              entityType: 'category',
+              entityId: id,
+              before,
+              after,
+            },
+          );
+
+          return updated;
+        },
+      );
 
     return this.toCategory(category);
   }

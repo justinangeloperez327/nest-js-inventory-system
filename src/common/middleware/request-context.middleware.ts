@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { NextFunction, Response } from 'express';
 
+import { runWithRequestContext } from '../context/request-context.js';
 import type { RequestWithId } from '../types/request-with-id.type.js';
 
 const logger = new Logger('HTTP');
@@ -46,5 +47,16 @@ export function requestContextMiddleware(
     );
   });
 
-  next();
+  const ipAddress =
+    request.ip ||
+    request.socket.remoteAddress ||
+    null;
+
+  runWithRequestContext(
+    {
+      requestId,
+      ipAddress,
+    },
+    () => next(),
+  );
 }

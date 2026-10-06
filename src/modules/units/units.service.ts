@@ -11,13 +11,17 @@ import {
   toPaginationWindow,
 } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
+import { AuditService } from '../audit/audit.service.js';
 import type { UnitListQueryDto } from './dto/unit-list-query.dto.js';
 import type { UnitStatusDto } from './dto/unit-status.dto.js';
 import type { UnitUpsertDto } from './dto/unit-upsert.dto.js';
 
 @Injectable()
 export class UnitsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   async list(query: UnitListQueryDto) {
     const { skip, take } = toPaginationWindow(query);
@@ -86,7 +90,10 @@ export class UnitsService {
     return this.toUnit(unit);
   }
 
-  async create(dto: UnitUpsertDto) {
+  async create(
+    dto: UnitUpsertDto,
+    userId: string,
+  ) {
     await this.assertUnique(
       dto.code,
       dto.name,
@@ -94,13 +101,35 @@ export class UnitsService {
     );
 
     try {
-      const unit = await this.prisma.unit.create({
-        data: {
-          code: dto.code,
-          name: dto.name,
-          symbol: dto.symbol,
-        },
-      });
+      const unit =
+        await this.prisma.$transaction(
+          async (tx) => {
+            const created =
+              await tx.unit.create({
+                data: {
+                  code: dto.code,
+                  name: dto.name,
+                  symbol: dto.symbol,
+                },
+              });
+
+            const after =
+              this.toUnit(created);
+
+            await this.audit.recordInTransaction(
+              tx,
+              {
+                userId,
+                action: 'unit.created',
+                entityType: 'unit',
+                entityId: created.id,
+                after,
+              },
+            );
+
+            return created;
+          },
+        );
 
       return this.toUnit(unit);
     } catch (error) {
@@ -109,8 +138,13 @@ export class UnitsService {
     }
   }
 
-  async update(id: string, dto: UnitUpsertDto) {
+  async update(
+    id: string,
+    dto: UnitUpsertDto,
+    userId: string,
+  ) {
     await this.requireUnit(id);
+    const before = await this.get(id);
     await this.assertUnique(
       dto.code,
       dto.name,
@@ -119,14 +153,38 @@ export class UnitsService {
     );
 
     try {
-      const unit = await this.prisma.unit.update({
-        where: { id },
-        data: {
-          code: dto.code,
-          name: dto.name,
-          symbol: dto.symbol,
-        },
-      });
+      const unit =
+        await this.prisma.$transaction(
+          async (tx) => {
+            const updated =
+              await tx.unit.update({
+                where: { id },
+                data: {
+                  code: dto.code,
+                  name: dto.name,
+                  symbol: dto.symbol,
+                },
+              });
+
+            const after =
+              this.toUnit(updated);
+
+            await this.audit.recordInTransaction(
+              tx,
+              {
+                userId,
+                action:
+                  'unit.updated',
+                entityType: 'unit',
+                entityId: id,
+                before,
+                after,
+              },
+            );
+
+            return updated;
+          },
+        );
 
       return this.toUnit(unit);
     } catch (error) {
@@ -135,13 +193,44 @@ export class UnitsService {
     }
   }
 
-  async setStatus(id: string, dto: UnitStatusDto) {
+  async setStatus(
+    id: string,
+    dto: UnitStatusDto,
+    userId: string,
+  ) {
     await this.requireUnit(id);
+    const before = await this.get(id);
 
-    const unit = await this.prisma.unit.update({
-      where: { id },
-      data: { isActive: dto.active },
-    });
+    const unit =
+      await this.prisma.$transaction(
+        async (tx) => {
+          const updated =
+            await tx.unit.update({
+              where: { id },
+              data: {
+                isActive: dto.active,
+              },
+            });
+
+          const after =
+            this.toUnit(updated);
+
+          await this.audit.recordInTransaction(
+            tx,
+            {
+              userId,
+              action:
+                'unit.status_changed',
+              entityType: 'unit',
+              entityId: id,
+              before,
+              after,
+            },
+          );
+
+          return updated;
+        },
+      );
 
     return this.toUnit(unit);
   }

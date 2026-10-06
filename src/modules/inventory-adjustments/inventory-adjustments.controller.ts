@@ -68,8 +68,13 @@ export class InventoryAdjustmentsController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: InventoryAdjustmentUpsertDto,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.adjustments.update(id, dto);
+    return this.adjustments.update(
+      id,
+      dto,
+      user.id,
+    );
   }
 
   @Post(':id/post')

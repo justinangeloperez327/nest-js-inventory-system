@@ -12,6 +12,7 @@ import {
   toPaginationWindow,
 } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
+import { AuditService } from '../audit/audit.service.js';
 import { StockMovementsService } from '../stock-movements/stock-movements.service.js';
 import type { InventoryAdjustmentProductQueryDto } from './dto/inventory-adjustment-product-query.dto.js';
 import type { InventoryAdjustmentQueryDto } from './dto/inventory-adjustment-query.dto.js';
@@ -86,6 +87,7 @@ export class InventoryAdjustmentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly movements: StockMovementsService,
+    private readonly audit: AuditService,
   ) {}
 
   async list(query: InventoryAdjustmentQueryDto) {
@@ -340,50 +342,100 @@ export class InventoryAdjustmentsService {
   ) {
     await this.validateDraft(dto);
 
-    const sequence =
-      await this.prisma.$queryRawUnsafe<SequenceRow[]>(
-        'SELECT nextval(\'inventory_adjustment_number_seq\') AS "value"',
-      );
-    const value = sequence[0]?.value;
+    const adjustmentId =
+      await this.prisma.$transaction(
+        async (tx) => {
+          const sequence =
+            await tx.$queryRawUnsafe<
+              SequenceRow[]
+            >(
+              'SELECT nextval(\'inventory_adjustment_number_seq\') AS "value"',
+            );
+          const value =
+            sequence[0]?.value;
 
-    if (value === undefined) {
-      throw new ConflictException({
-        code: 'ADJUSTMENT_NUMBER_UNAVAILABLE',
-        message:
-          'Unable to allocate an inventory adjustment number',
-      });
-    }
+          if (value === undefined) {
+            throw new ConflictException({
+              code:
+                'ADJUSTMENT_NUMBER_UNAVAILABLE',
+              message:
+                'Unable to allocate an inventory adjustment number',
+            });
+          }
 
-    const number =
-      'ADJ-' + value.toString().padStart(8, '0');
+          const number =
+            'ADJ-' +
+            value
+              .toString()
+              .padStart(8, '0');
 
-    const adjustment =
-      await this.prisma.inventoryAdjustment.create({
-        data: {
-          number,
-          productId: dto.productId,
-          warehouseId: dto.warehouseId,
-          direction:
-            ADJUSTMENT_DIRECTION_TO_DB[dto.direction],
-          quantity: dto.quantity,
-          reasonCode: dto.reasonCode,
-          notes: dto.notes ?? null,
-          createdByUserId: userId,
+          const adjustment =
+            await tx.inventoryAdjustment.create({
+              data: {
+                number,
+                productId:
+                  dto.productId,
+                warehouseId:
+                  dto.warehouseId,
+                direction:
+                  ADJUSTMENT_DIRECTION_TO_DB[
+                    dto.direction
+                  ],
+                quantity: dto.quantity,
+                reasonCode:
+                  dto.reasonCode,
+                notes:
+                  dto.notes ?? null,
+                createdByUserId:
+                  userId,
+              },
+              select: {
+                id: true,
+                number: true,
+                productId: true,
+                warehouseId: true,
+                direction: true,
+                quantity: true,
+                reasonCode: true,
+                notes: true,
+                status: true,
+              },
+            });
+
+          await this.audit.recordInTransaction(
+            tx,
+            {
+              userId,
+              action:
+                'inventory-adjustment.created',
+              entityType:
+                'inventory-adjustment',
+              entityId:
+                adjustment.id,
+              after: adjustment,
+            },
+          );
+
+          return adjustment.id;
         },
-        select: { id: true },
-      });
+      );
 
-    return this.get(adjustment.id);
+    return this.get(adjustmentId);
   }
 
   async update(
     id: string,
     dto: InventoryAdjustmentUpsertDto,
+    userId: string,
   ) {
     await this.validateDraft(dto);
+    const before = await this.get(id);
 
     const result =
-      await this.prisma.inventoryAdjustment.updateMany({
+      await this.prisma.$transaction(
+        async (tx) => {
+          const updated =
+            await tx.inventoryAdjustment.updateMany({
         where: {
           id,
           status: 'DRAFT',
@@ -398,6 +450,40 @@ export class InventoryAdjustmentsService {
           notes: dto.notes ?? null,
         },
       });
+
+          if (updated.count === 1) {
+            await this.audit.recordInTransaction(
+              tx,
+              {
+                userId,
+                action:
+                  'inventory-adjustment.updated',
+                entityType:
+                  'inventory-adjustment',
+                entityId: id,
+                before,
+                after: {
+                  productId:
+                    dto.productId,
+                  warehouseId:
+                    dto.warehouseId,
+                  direction:
+                    dto.direction,
+                  quantity:
+                    dto.quantity,
+                  reasonCode:
+                    dto.reasonCode,
+                  notes:
+                    dto.notes ?? null,
+                  status: 'draft',
+                },
+              },
+            );
+          }
+
+          return updated;
+        },
+      );
 
     if (result.count === 0) {
       const existing =
@@ -540,6 +626,31 @@ export class InventoryAdjustmentsService {
           balanceAfter: movement.balanceAfter,
         },
       });
+
+      await this.audit.recordInTransaction(
+        tx,
+        {
+          userId,
+          action:
+            'inventory-adjustment.posted',
+          entityType:
+            'inventory-adjustment',
+          entityId: id,
+          before: {
+            status: 'draft',
+          },
+          after: {
+            status: 'posted',
+            movementId:
+              movement.id,
+            balanceBefore:
+              movement.balanceBefore,
+            balanceAfter:
+              movement.balanceAfter,
+            postedAt: occurredAt,
+          },
+        },
+      );
     });
 
     return this.get(id);

@@ -76,8 +76,13 @@ export class PurchaseOrdersController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: PurchaseOrderUpsertDto,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.purchaseOrders.update(id, dto);
+    return this.purchaseOrders.update(
+      id,
+      dto,
+      user.id,
+    );
   }
 
   @Post(':id/submit')

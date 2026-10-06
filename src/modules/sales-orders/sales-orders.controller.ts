@@ -87,8 +87,13 @@ export class SalesOrdersController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SalesOrderUpsertDto,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.salesOrders.update(id, dto);
+    return this.salesOrders.update(
+      id,
+      dto,
+      user.id,
+    );
   }
 
   @Post(':id/confirm')

@@ -2122,6 +2122,213 @@ Safety controls:
 
 No reporting tables, cached totals, or materialized report state are introduced in Group 20.
 
+## Audit trail
+
+Group 21 adds an append-only audit trail for security administration, master-data changes, and business workflow transitions.
+
+Endpoints:
+
+```text
+GET /api/v1/audit-logs
+GET /api/v1/audit-logs/options
+GET /api/v1/audit-logs/:id
+```
+
+Audit access uses the existing administrative permission:
+
+```text
+user.manage
+```
+
+through `Permission.AuditRead`. No new standalone audit permission is introduced in Group 21.
+
+### Audit record
+
+Each audit event can contain:
+
+```text
+id
+action
+entityType
+entityId
+actor
+before
+after
+ipAddress
+requestId
+createdAt
+```
+
+`requestId` is the same request correlation ID returned in the `X-Request-Id` response header.
+
+Client IP and request ID are captured from request-scoped context rather than being passed manually through every service method.
+
+### Querying
+
+The audit list is server-side paginated and supports:
+
+```text
+page
+pageSize
+search
+sort
+direction
+userId
+action
+entityType
+entityId
+dateFrom
+dateTo
+```
+
+Search covers action, entity type, entity ID, request ID, and actor name/email.
+
+Supported sort fields are:
+
+```text
+createdAt
+action
+entityType
+```
+
+The options endpoint returns the actions, entity types, and actors represented in the current audit history.
+
+### Transactional auditing
+
+For business and administration changes, the audit event is written inside the same Prisma transaction as the state mutation whenever the underlying operation is transactional.
+
+This means:
+
+```text
+business change succeeds + audit succeeds
+or
+both roll back
+```
+
+Audit history is not written as a best-effort background side effect.
+
+### Covered events
+
+Security and access administration:
+
+```text
+auth.login
+auth.logout
+user.created
+user.updated
+user.status_changed
+user.roles_changed
+user.password_reset
+role.created
+role.updated
+role.permissions_changed
+role.deleted
+```
+
+Master data:
+
+```text
+category.created
+category.updated
+category.status_changed
+
+unit.created
+unit.updated
+unit.status_changed
+
+product.created
+product.updated
+product.status_changed
+
+warehouse.created
+warehouse.updated
+warehouse.status_changed
+
+supplier.created
+supplier.updated
+supplier.status_changed
+
+customer.created
+customer.updated
+customer.status_changed
+```
+
+Inventory and operational documents:
+
+```text
+inventory-adjustment.created
+inventory-adjustment.updated
+inventory-adjustment.posted
+
+inventory-transfer.created
+inventory-transfer.updated
+inventory-transfer.posted
+
+purchase-order.created
+purchase-order.updated
+purchase-order.submitted
+purchase-order.approved
+
+goods-receipt.created
+goods-receipt.updated
+goods-receipt.posted
+
+sales-order.created
+sales-order.updated
+sales-order.confirmed
+sales-order.cancelled
+sales-order.dispatched
+sales-order.completed
+
+sales-return.created
+
+stock-count.created
+stock-count.started
+stock-count.lines_updated
+stock-count.submitted
+stock-count.posted
+```
+
+### Audit trail versus stock ledger
+
+The audit trail and stock movement ledger have different responsibilities.
+
+The stock movement ledger remains the accounting history for physical inventory quantity changes.
+
+The audit trail records who changed application/business state, when it happened, and the safe before/after context.
+
+A dispatch, receipt, adjustment, transfer, return, or stock-count posting can therefore have both:
+
+- immutable stock movement records describing inventory effects
+- an immutable audit event describing the user action and workflow transition
+
+The audit trail never replaces the stock ledger.
+
+### Sensitive-data handling
+
+Audit snapshots are sanitized before persistence.
+
+Keys associated with credentials or secrets are redacted, including password, token, secret, authorization, cookie, API-key, and private-key fields.
+
+Password reset audit events record only that a reset occurred and how many active sessions were revoked. Passwords and password hashes are not stored.
+
+Refresh-token rotation is intentionally not added to the business audit trail, avoiding high-volume token lifecycle noise and secret-adjacent data.
+
+Snapshot depth, collection size, and long string values are bounded before JSON persistence.
+
+### Database immutability
+
+PostgreSQL enforces append-only audit history.
+
+The Group 21 migration adds:
+
+- indexes for action/date, entity/date, and request ID lookup
+- maximum lengths for action, entity type, and entity ID
+- non-blank checks for action and entity type
+- a trigger rejecting every `UPDATE` and `DELETE` against `audit_logs`
+
+Corrections are represented by new business actions; historical audit records are never rewritten.
+
 ## Users and access control
 
 User, role, and permission administration is protected by `user.manage`.

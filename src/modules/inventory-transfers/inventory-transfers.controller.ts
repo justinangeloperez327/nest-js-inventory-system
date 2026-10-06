@@ -68,8 +68,13 @@ export class InventoryTransfersController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: InventoryTransferUpsertDto,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.transfers.update(id, dto);
+    return this.transfers.update(
+      id,
+      dto,
+      user.id,
+    );
   }
 
   @Post(':id/post')

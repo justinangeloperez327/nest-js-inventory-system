@@ -12,6 +12,7 @@ import {
   toPaginationWindow,
 } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
+import { AuditService } from '../audit/audit.service.js';
 import type { ProductListQueryDto } from './dto/product-list-query.dto.js';
 import type { ProductStatusDto } from './dto/product-status.dto.js';
 import type { ProductUpsertDto } from './dto/product-upsert.dto.js';
@@ -43,6 +44,7 @@ export class ProductsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly audit: AuditService,
   ) {}
 
   async list(query: ProductListQueryDto) {
@@ -142,7 +144,10 @@ export class ProductsService {
     return this.toDetail(product as ProductRecord);
   }
 
-  async create(dto: ProductUpsertDto) {
+  async create(
+    dto: ProductUpsertDto,
+    userId: string,
+  ) {
     await this.assertReferences(
       dto.categoryId,
       dto.unitId,
@@ -153,20 +158,54 @@ export class ProductsService {
     );
 
     try {
-      const product = await this.prisma.product.create({
-        data: {
-          sku: dto.sku,
-          barcode: dto.barcode ?? null,
-          name: dto.name,
-          description: dto.description ?? null,
-          categoryId: dto.categoryId ?? null,
-          unitId: dto.unitId ?? null,
-          costPrice: dto.costPrice,
-          sellingPrice: dto.sellingPrice,
-          reorderPoint: dto.reorderLevel,
-        },
-        include: this.productInclude(),
-      });
+      const product =
+        await this.prisma.$transaction(
+          async (tx) => {
+            const created =
+              await tx.product.create({
+                data: {
+                  sku: dto.sku,
+                  barcode:
+                    dto.barcode ?? null,
+                  name: dto.name,
+                  description:
+                    dto.description ?? null,
+                  categoryId:
+                    dto.categoryId ?? null,
+                  unitId:
+                    dto.unitId ?? null,
+                  costPrice:
+                    dto.costPrice,
+                  sellingPrice:
+                    dto.sellingPrice,
+                  reorderPoint:
+                    dto.reorderLevel,
+                },
+                include:
+                  this.productInclude(),
+              });
+
+            const after =
+              this.toDetail(
+                created as ProductRecord,
+              );
+
+            await this.audit.recordInTransaction(
+              tx,
+              {
+                userId,
+                action:
+                  'product.created',
+                entityType: 'product',
+                entityId:
+                  created.id,
+                after,
+              },
+            );
+
+            return created;
+          },
+        );
 
       return this.toDetail(product as ProductRecord);
     } catch (error) {
@@ -175,7 +214,11 @@ export class ProductsService {
     }
   }
 
-  async update(id: string, dto: ProductUpsertDto) {
+  async update(
+    id: string,
+    dto: ProductUpsertDto,
+    userId: string,
+  ) {
     const current = await this.prisma.product.findUnique({
       where: { id },
       select: {
@@ -187,6 +230,8 @@ export class ProductsService {
     if (!current) {
       throw this.notFound();
     }
+
+    const before = await this.get(id);
 
     await this.assertReferences(
       dto.categoryId,
@@ -200,21 +245,55 @@ export class ProductsService {
     );
 
     try {
-      const product = await this.prisma.product.update({
-        where: { id },
-        data: {
-          sku: dto.sku,
-          barcode: dto.barcode ?? null,
-          name: dto.name,
-          description: dto.description ?? null,
-          categoryId: dto.categoryId ?? null,
-          unitId: dto.unitId ?? null,
-          costPrice: dto.costPrice,
-          sellingPrice: dto.sellingPrice,
-          reorderPoint: dto.reorderLevel,
-        },
-        include: this.productInclude(),
-      });
+      const product =
+        await this.prisma.$transaction(
+          async (tx) => {
+            const updated =
+              await tx.product.update({
+                where: { id },
+                data: {
+                  sku: dto.sku,
+                  barcode:
+                    dto.barcode ?? null,
+                  name: dto.name,
+                  description:
+                    dto.description ?? null,
+                  categoryId:
+                    dto.categoryId ?? null,
+                  unitId:
+                    dto.unitId ?? null,
+                  costPrice:
+                    dto.costPrice,
+                  sellingPrice:
+                    dto.sellingPrice,
+                  reorderPoint:
+                    dto.reorderLevel,
+                },
+                include:
+                  this.productInclude(),
+              });
+
+            const after =
+              this.toDetail(
+                updated as ProductRecord,
+              );
+
+            await this.audit.recordInTransaction(
+              tx,
+              {
+                userId,
+                action:
+                  'product.updated',
+                entityType: 'product',
+                entityId: id,
+                before,
+                after,
+              },
+            );
+
+            return updated;
+          },
+        );
 
       return this.toDetail(product as ProductRecord);
     } catch (error) {
@@ -226,6 +305,7 @@ export class ProductsService {
   async setStatus(
     id: string,
     dto: ProductStatusDto,
+    userId: string,
   ) {
     const existing =
       await this.prisma.product.findUnique({
@@ -237,11 +317,43 @@ export class ProductsService {
       throw this.notFound();
     }
 
-    const product = await this.prisma.product.update({
-      where: { id },
-      data: { isActive: dto.active },
-      include: this.productInclude(),
-    });
+    const before = await this.get(id);
+
+    const product =
+      await this.prisma.$transaction(
+        async (tx) => {
+          const updated =
+            await tx.product.update({
+              where: { id },
+              data: {
+                isActive:
+                  dto.active,
+              },
+              include:
+                this.productInclude(),
+            });
+
+          const after =
+            this.toDetail(
+              updated as ProductRecord,
+            );
+
+          await this.audit.recordInTransaction(
+            tx,
+            {
+              userId,
+              action:
+                'product.status_changed',
+              entityType: 'product',
+              entityId: id,
+              before,
+              after,
+            },
+          );
+
+          return updated;
+        },
+      );
 
     return this.toDetail(product as ProductRecord);
   }

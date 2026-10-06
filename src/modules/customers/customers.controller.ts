@@ -14,7 +14,9 @@ import {
 import { RequirePermissions } from '../access-control/decorators/permissions.decorator.js';
 import { PermissionsGuard } from '../access-control/guards/permissions.guard.js';
 import { Permission } from '../access-control/rbac.constants.js';
+import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { AccessTokenGuard } from '../auth/guards/access-token.guard.js';
+import type { AuthUser } from '../auth/interfaces/auth-user.interface.js';
 import { CustomerListQueryDto } from './dto/customer-list-query.dto.js';
 import { CustomerStatusDto } from './dto/customer-status.dto.js';
 import { CustomerUpsertDto } from './dto/customer-upsert.dto.js';
@@ -41,8 +43,14 @@ export class CustomersController {
 
   @Post()
   @RequirePermissions(Permission.CustomersManage)
-  create(@Body() dto: CustomerUpsertDto) {
-    return this.customers.create(dto);
+  create(
+    @Body() dto: CustomerUpsertDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.customers.create(
+      dto,
+      user.id,
+    );
   }
 
   @Put(':id')
@@ -50,8 +58,13 @@ export class CustomersController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CustomerUpsertDto,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.customers.update(id, dto);
+    return this.customers.update(
+      id,
+      dto,
+      user.id,
+    );
   }
 
   @Patch(':id/status')
@@ -59,7 +72,12 @@ export class CustomersController {
   setStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CustomerStatusDto,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.customers.setStatus(id, dto);
+    return this.customers.setStatus(
+      id,
+      dto,
+      user.id,
+    );
   }
 }

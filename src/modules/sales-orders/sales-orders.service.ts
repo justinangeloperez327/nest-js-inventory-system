@@ -14,6 +14,7 @@ import {
 } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import type { Prisma } from '../../generated/prisma/client.js';
+import { AuditService } from '../audit/audit.service.js';
 import { StockMovementsService } from '../stock-movements/stock-movements.service.js';
 import type { SalesOrderLookupQueryDto } from './dto/sales-order-lookup-query.dto.js';
 import type { SalesOrderProductQueryDto } from './dto/sales-order-product-query.dto.js';
@@ -152,6 +153,7 @@ export class SalesOrdersService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly movements: StockMovementsService,
+    private readonly audit: AuditService,
   ) {}
 
   async list(query: SalesOrderQueryDto) {
@@ -706,8 +708,34 @@ export class SalesOrdersService {
                   ),
               },
             },
-            select: { id: true },
+            select: {
+              id: true,
+              number: true,
+              customerId: true,
+              warehouseId: true,
+              orderDate: true,
+              notes: true,
+              subtotal: true,
+              currencyCode: true,
+              status: true,
+            },
           });
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId,
+            action:
+              'sales-order.created',
+            entityType:
+              'sales-order',
+            entityId: item.id,
+            after: {
+              ...item,
+              lines: prepared.lines,
+            },
+          },
+        );
 
         return item.id;
       },
@@ -719,7 +747,10 @@ export class SalesOrdersService {
   async update(
     id: string,
     dto: SalesOrderUpsertDto,
+    userId: string,
   ) {
+    const before = await this.get(id);
+
     await this.prisma.$transaction(
       async (tx) => {
         await this.lockWithStatus(
@@ -761,6 +792,33 @@ export class SalesOrdersService {
             }),
           ),
         });
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId,
+            action:
+              'sales-order.updated',
+            entityType:
+              'sales-order',
+            entityId: id,
+            before,
+            after: {
+              customerId:
+                dto.customerId,
+              warehouseId:
+                dto.warehouseId,
+              orderDate:
+                prepared.orderDate,
+              notes:
+                dto.notes ?? null,
+              subtotal:
+                prepared.subtotal,
+              status: 'draft',
+              lines: prepared.lines,
+            },
+          },
+        );
       },
     );
 
@@ -787,11 +845,13 @@ export class SalesOrdersService {
           [order.warehouseId],
         );
 
+        const confirmedAt = new Date();
+
         await tx.salesOrder.update({
           where: { id },
           data: {
             status: 'CONFIRMED',
-            confirmedAt: new Date(),
+            confirmedAt,
             confirmedByUserId: userId,
           },
         });
@@ -857,6 +917,27 @@ export class SalesOrdersService {
             },
           });
         }
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId,
+            action:
+              'sales-order.confirmed',
+            entityType:
+              'sales-order',
+            entityId: id,
+            before: {
+              status: 'draft',
+            },
+            after: {
+              status: 'confirmed',
+              confirmedAt,
+              reservedLineCount:
+                order.lines.length,
+            },
+          },
+        );
       },
     );
 
@@ -941,14 +1022,37 @@ export class SalesOrdersService {
           });
         }
 
+        const cancelledAt = new Date();
+
         await tx.salesOrder.update({
           where: { id },
           data: {
             status: 'CANCELLED',
-            cancelledAt: new Date(),
+            cancelledAt,
             cancelledByUserId: userId,
           },
         });
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId,
+            action:
+              'sales-order.cancelled',
+            entityType:
+              'sales-order',
+            entityId: id,
+            before: {
+              status: 'confirmed',
+            },
+            after: {
+              status: 'cancelled',
+              cancelledAt,
+              releasedLineCount:
+                order.lines.length,
+            },
+          },
+        );
       },
     );
 
@@ -1086,6 +1190,28 @@ export class SalesOrdersService {
             dispatchedByUserId: userId,
           },
         });
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId,
+            action:
+              'sales-order.dispatched',
+            entityType:
+              'sales-order',
+            entityId: id,
+            before: {
+              status: 'confirmed',
+            },
+            after: {
+              status: 'dispatched',
+              dispatchedAt:
+                occurredAt,
+              dispatchedLineCount:
+                order.lines.length,
+            },
+          },
+        );
       },
     );
 
@@ -1101,14 +1227,35 @@ export class SalesOrdersService {
           'DISPATCHED',
         );
 
+        const completedAt = new Date();
+
         await tx.salesOrder.update({
           where: { id },
           data: {
             status: 'COMPLETED',
-            completedAt: new Date(),
+            completedAt,
             completedByUserId: userId,
           },
         });
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId,
+            action:
+              'sales-order.completed',
+            entityType:
+              'sales-order',
+            entityId: id,
+            before: {
+              status: 'dispatched',
+            },
+            after: {
+              status: 'completed',
+              completedAt,
+            },
+          },
+        );
       },
     );
 
@@ -1431,6 +1578,38 @@ export class SalesOrdersService {
               },
             });
           }
+
+          await this.audit.recordInTransaction(
+            tx,
+            {
+              userId,
+              action:
+                'sales-return.created',
+              entityType:
+                'sales-return',
+              entityId:
+                salesReturn.id,
+              after: {
+                number,
+                salesOrderId: id,
+                notes:
+                  dto.notes ?? null,
+                lineCount:
+                  prepared.length,
+                lines:
+                  prepared.map(
+                    (item) => ({
+                      salesOrderLineId:
+                        item.line.id,
+                      productId:
+                        item.line.productId,
+                      quantity:
+                        item.quantity,
+                    }),
+                  ),
+              },
+            },
+          );
 
           return salesReturn.id;
         },

@@ -13,6 +13,7 @@ import {
   toPaginationWindow,
 } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
+import { AuditService } from '../audit/audit.service.js';
 import type { SupplierListQueryDto } from './dto/supplier-list-query.dto.js';
 import type { SupplierStatusDto } from './dto/supplier-status.dto.js';
 import type { SupplierUpsertDto } from './dto/supplier-upsert.dto.js';
@@ -23,6 +24,7 @@ export class SuppliersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly audit: AuditService,
   ) {}
 
   async list(query: SupplierListQueryDto) {
@@ -107,7 +109,10 @@ export class SuppliersService {
     return this.toDetail(supplier);
   }
 
-  async create(dto: SupplierUpsertDto) {
+  async create(
+    dto: SupplierUpsertDto,
+    userId: string,
+  ) {
     await this.assertUnique(
       dto.code,
       dto.taxNumber,
@@ -115,9 +120,33 @@ export class SuppliersService {
 
     try {
       const supplier =
-        await this.prisma.supplier.create({
-          data: this.toData(dto),
-        });
+        await this.prisma.$transaction(
+          async (tx) => {
+            const created =
+              await tx.supplier.create({
+                data: this.toData(dto),
+              });
+
+            const after =
+              this.toDetail(created);
+
+            await this.audit.recordInTransaction(
+              tx,
+              {
+                userId,
+                action:
+                  'supplier.created',
+                entityType:
+                  'supplier',
+                entityId:
+                  created.id,
+                after,
+              },
+            );
+
+            return created;
+          },
+        );
 
       return this.toDetail(supplier);
     } catch (error) {
@@ -129,8 +158,10 @@ export class SuppliersService {
   async update(
     id: string,
     dto: SupplierUpsertDto,
+    userId: string,
   ) {
     await this.requireSupplier(id);
+    const before = await this.get(id);
     await this.assertUnique(
       dto.code,
       dto.taxNumber,
@@ -139,10 +170,34 @@ export class SuppliersService {
 
     try {
       const supplier =
-        await this.prisma.supplier.update({
-          where: { id },
-          data: this.toData(dto),
-        });
+        await this.prisma.$transaction(
+          async (tx) => {
+            const updated =
+              await tx.supplier.update({
+                where: { id },
+                data: this.toData(dto),
+              });
+
+            const after =
+              this.toDetail(updated);
+
+            await this.audit.recordInTransaction(
+              tx,
+              {
+                userId,
+                action:
+                  'supplier.updated',
+                entityType:
+                  'supplier',
+                entityId: id,
+                before,
+                after,
+              },
+            );
+
+            return updated;
+          },
+        );
 
       return this.toDetail(supplier);
     } catch (error) {
@@ -154,14 +209,43 @@ export class SuppliersService {
   async setStatus(
     id: string,
     dto: SupplierStatusDto,
+    userId: string,
   ) {
     await this.requireSupplier(id);
+    const before = await this.get(id);
 
     const supplier =
-      await this.prisma.supplier.update({
-        where: { id },
-        data: { isActive: dto.active },
-      });
+      await this.prisma.$transaction(
+        async (tx) => {
+          const updated =
+            await tx.supplier.update({
+              where: { id },
+              data: {
+                isActive:
+                  dto.active,
+              },
+            });
+
+          const after =
+            this.toDetail(updated);
+
+          await this.audit.recordInTransaction(
+            tx,
+            {
+              userId,
+              action:
+                'supplier.status_changed',
+              entityType:
+                'supplier',
+              entityId: id,
+              before,
+              after,
+            },
+          );
+
+          return updated;
+        },
+      );
 
     return this.toDetail(supplier);
   }

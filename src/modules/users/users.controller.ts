@@ -14,7 +14,9 @@ import {
 import { RequirePermissions } from '../access-control/decorators/permissions.decorator.js';
 import { PermissionsGuard } from '../access-control/guards/permissions.guard.js';
 import { Permission } from '../access-control/rbac.constants.js';
+import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { AccessTokenGuard } from '../auth/guards/access-token.guard.js';
+import type { AuthUser } from '../auth/interfaces/auth-user.interface.js';
 import { CreateUserDto } from './dto/create-user.dto.js';
 import { ResetUserPasswordDto } from './dto/reset-user-password.dto.js';
 import { SetUserRolesDto } from './dto/set-user-roles.dto.js';
@@ -42,8 +44,14 @@ export class UsersController {
 
   @Post()
   @RequirePermissions(Permission.UsersCreate)
-  create(@Body() dto: CreateUserDto) {
-    return this.users.create(dto);
+  create(
+    @Body() dto: CreateUserDto,
+    @CurrentUser() actor: AuthUser,
+  ) {
+    return this.users.create(
+      dto,
+      actor.id,
+    );
   }
 
   @Patch(':id')
@@ -51,8 +59,13 @@ export class UsersController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserDto,
+    @CurrentUser() actor: AuthUser,
   ) {
-    return this.users.update(id, dto);
+    return this.users.update(
+      id,
+      dto,
+      actor.id,
+    );
   }
 
   @Patch(':id/status')
@@ -60,8 +73,13 @@ export class UsersController {
   setStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SetUserStatusDto,
+    @CurrentUser() actor: AuthUser,
   ) {
-    return this.users.setStatus(id, dto);
+    return this.users.setStatus(
+      id,
+      dto,
+      actor.id,
+    );
   }
 
   @Put(':id/roles')
@@ -69,8 +87,13 @@ export class UsersController {
   setRoles(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SetUserRolesDto,
+    @CurrentUser() actor: AuthUser,
   ) {
-    return this.users.setRoles(id, dto);
+    return this.users.setRoles(
+      id,
+      dto,
+      actor.id,
+    );
   }
 
   @Put(':id/password')
@@ -78,7 +101,12 @@ export class UsersController {
   resetPassword(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ResetUserPasswordDto,
+    @CurrentUser() actor: AuthUser,
   ) {
-    return this.users.resetPassword(id, dto);
+    return this.users.resetPassword(
+      id,
+      dto,
+      actor.id,
+    );
   }
 }

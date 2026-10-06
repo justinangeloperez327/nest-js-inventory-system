@@ -10,6 +10,7 @@ import { ApiException } from '../../common/exceptions/api.exception.js';
 import { toPaginatedResult } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import type { Prisma } from '../../generated/prisma/client.js';
+import { AuditService } from '../audit/audit.service.js';
 import { StockMovementsService } from '../stock-movements/stock-movements.service.js';
 import type { StockCountCreateDto } from './dto/stock-count-create.dto.js';
 import type { StockCountLineQueryDto } from './dto/stock-count-line-query.dto.js';
@@ -267,6 +268,7 @@ export class StockCountsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly movements: StockMovementsService,
+    private readonly audit: AuditService,
   ) {}
 
   async list(query: StockCountQueryDto) {
@@ -521,8 +523,27 @@ export class StockCountsService {
               notes: dto.notes ?? null,
               createdByUserId: userId,
             },
-            select: { id: true },
+            select: {
+              id: true,
+              number: true,
+              warehouseId: true,
+              notes: true,
+              status: true,
+            },
           });
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId,
+            action:
+              'stock-count.created',
+            entityType:
+              'stock-count',
+            entityId: count.id,
+            after: count,
+          },
+        );
 
         return count.id;
       },
@@ -688,6 +709,29 @@ export class StockCountsService {
             }),
           ),
         });
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId,
+            action:
+              'stock-count.started',
+            entityType:
+              'stock-count',
+            entityId: id,
+            before: {
+              status: 'draft',
+            },
+            after: {
+              status: 'counting',
+              startedAt,
+              warehouseId:
+                locked.warehouseId,
+              snapshotLineCount:
+                snapshot.length,
+            },
+          },
+        );
       },
     );
 
@@ -698,6 +742,7 @@ export class StockCountsService {
     id: string,
     dto: StockCountLinesUpdateDto,
     query: StockCountLineQueryDto,
+    userId: string,
   ) {
     await this.prisma.$transaction(
       async (tx) => {
@@ -792,6 +837,27 @@ export class StockCountsService {
             });
           }
         }
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId,
+            action:
+              'stock-count.lines_updated',
+            entityType:
+              'stock-count',
+            entityId: id,
+            after: {
+              updatedLineCount:
+                dto.lines.length,
+              lineIds:
+                dto.lines.map(
+                  (line) =>
+                    line.lineId,
+                ),
+            },
+          },
+        );
       },
     );
 
@@ -839,14 +905,39 @@ export class StockCountsService {
           });
         }
 
+        const submittedAt = new Date();
+
         await tx.stockCount.update({
           where: { id },
           data: {
             status: 'SUBMITTED',
-            submittedAt: new Date(),
+            submittedAt,
             submittedByUserId: userId,
           },
         });
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId,
+            action:
+              'stock-count.submitted',
+            entityType:
+              'stock-count',
+            entityId: id,
+            before: {
+              status: 'counting',
+            },
+            after: {
+              status: 'submitted',
+              submittedAt,
+              lineCount:
+                stats.lineCount,
+              varianceLineCount:
+                stats.varianceLineCount,
+            },
+          },
+        );
       },
     );
 
@@ -1131,6 +1222,40 @@ export class StockCountsService {
             postedAt: occurredAt,
           },
         });
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId,
+            action:
+              'stock-count.posted',
+            entityType:
+              'stock-count',
+            entityId: id,
+            before: {
+              status: 'submitted',
+            },
+            after: {
+              status: 'posted',
+              approvedAt:
+                occurredAt,
+              postedAt:
+                occurredAt,
+              warehouseId:
+                locked.warehouseId,
+              lineCount:
+                lines.length,
+              varianceLineCount:
+                lines.filter(
+                  (line) =>
+                    Number(
+                      line.varianceQuantity ??
+                        0,
+                    ) !== 0,
+                ).length,
+            },
+          },
+        );
       },
     );
 

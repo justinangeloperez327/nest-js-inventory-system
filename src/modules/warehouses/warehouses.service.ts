@@ -11,13 +11,17 @@ import {
   toPaginationWindow,
 } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
+import { AuditService } from '../audit/audit.service.js';
 import type { WarehouseListQueryDto } from './dto/warehouse-list-query.dto.js';
 import type { WarehouseStatusDto } from './dto/warehouse-status.dto.js';
 import type { WarehouseUpsertDto } from './dto/warehouse-upsert.dto.js';
 
 @Injectable()
 export class WarehousesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   async list(query: WarehouseListQueryDto) {
     const { skip, take } = toPaginationWindow(query);
@@ -89,18 +93,46 @@ export class WarehousesService {
     return this.toWarehouse(warehouse);
   }
 
-  async create(dto: WarehouseUpsertDto) {
+  async create(
+    dto: WarehouseUpsertDto,
+    userId: string,
+  ) {
     await this.assertCodeAvailable(dto.code);
 
     try {
       const warehouse =
-        await this.prisma.warehouse.create({
-          data: {
-            code: dto.code,
-            name: dto.name,
-            location: dto.location ?? null,
+        await this.prisma.$transaction(
+          async (tx) => {
+            const created =
+              await tx.warehouse.create({
+                data: {
+                  code: dto.code,
+                  name: dto.name,
+                  location:
+                    dto.location ?? null,
+                },
+              });
+
+            const after =
+              this.toWarehouse(created);
+
+            await this.audit.recordInTransaction(
+              tx,
+              {
+                userId,
+                action:
+                  'warehouse.created',
+                entityType:
+                  'warehouse',
+                entityId:
+                  created.id,
+                after,
+              },
+            );
+
+            return created;
           },
-        });
+        );
 
       return this.toWarehouse(warehouse);
     } catch (error) {
@@ -112,20 +144,47 @@ export class WarehousesService {
   async update(
     id: string,
     dto: WarehouseUpsertDto,
+    userId: string,
   ) {
     await this.requireWarehouse(id);
+    const before = await this.get(id);
     await this.assertCodeAvailable(dto.code, id);
 
     try {
       const warehouse =
-        await this.prisma.warehouse.update({
-          where: { id },
-          data: {
-            code: dto.code,
-            name: dto.name,
-            location: dto.location ?? null,
+        await this.prisma.$transaction(
+          async (tx) => {
+            const updated =
+              await tx.warehouse.update({
+                where: { id },
+                data: {
+                  code: dto.code,
+                  name: dto.name,
+                  location:
+                    dto.location ?? null,
+                },
+              });
+
+            const after =
+              this.toWarehouse(updated);
+
+            await this.audit.recordInTransaction(
+              tx,
+              {
+                userId,
+                action:
+                  'warehouse.updated',
+                entityType:
+                  'warehouse',
+                entityId: id,
+                before,
+                after,
+              },
+            );
+
+            return updated;
           },
-        });
+        );
 
       return this.toWarehouse(warehouse);
     } catch (error) {
@@ -137,18 +196,46 @@ export class WarehousesService {
   async setStatus(
     id: string,
     dto: WarehouseStatusDto,
+    userId: string,
   ) {
     await this.requireWarehouse(id);
+    const before = await this.get(id);
 
     if (!dto.active) {
       await this.assertCanDeactivate(id);
     }
 
     const warehouse =
-      await this.prisma.warehouse.update({
-        where: { id },
-        data: { isActive: dto.active },
-      });
+      await this.prisma.$transaction(
+        async (tx) => {
+          const updated =
+            await tx.warehouse.update({
+              where: { id },
+              data: {
+                isActive: dto.active,
+              },
+            });
+
+          const after =
+            this.toWarehouse(updated);
+
+          await this.audit.recordInTransaction(
+            tx,
+            {
+              userId,
+              action:
+                'warehouse.status_changed',
+              entityType:
+                'warehouse',
+              entityId: id,
+              before,
+              after,
+            },
+          );
+
+          return updated;
+        },
+      );
 
     return this.toWarehouse(warehouse);
   }

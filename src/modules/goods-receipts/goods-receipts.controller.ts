@@ -73,8 +73,13 @@ export class GoodsReceiptsController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: GoodsReceiptUpsertDto,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.goodsReceipts.update(id, dto);
+    return this.goodsReceipts.update(
+      id,
+      dto,
+      user.id,
+    );
   }
 
   @Post(':id/post')

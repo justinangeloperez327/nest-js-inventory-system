@@ -14,7 +14,9 @@ import {
 import { RequirePermissions } from '../access-control/decorators/permissions.decorator.js';
 import { PermissionsGuard } from '../access-control/guards/permissions.guard.js';
 import { Permission } from '../access-control/rbac.constants.js';
+import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { AccessTokenGuard } from '../auth/guards/access-token.guard.js';
+import type { AuthUser } from '../auth/interfaces/auth-user.interface.js';
 import { CategoriesService } from './categories.service.js';
 import { CategoryListQueryDto } from './dto/category-list-query.dto.js';
 import { CategoryStatusDto } from './dto/category-status.dto.js';
@@ -39,8 +41,14 @@ export class CategoriesController {
 
   @Post()
   @RequirePermissions(Permission.CategoriesManage)
-  create(@Body() dto: CategoryUpsertDto) {
-    return this.categories.create(dto);
+  create(
+    @Body() dto: CategoryUpsertDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.categories.create(
+      dto,
+      user.id,
+    );
   }
 
   @Put(':id')
@@ -48,8 +56,13 @@ export class CategoriesController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CategoryUpsertDto,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.categories.update(id, dto);
+    return this.categories.update(
+      id,
+      dto,
+      user.id,
+    );
   }
 
   @Patch(':id/status')
@@ -57,7 +70,12 @@ export class CategoriesController {
   setStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CategoryStatusDto,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.categories.setStatus(id, dto);
+    return this.categories.setStatus(
+      id,
+      dto,
+      user.id,
+    );
   }
 }

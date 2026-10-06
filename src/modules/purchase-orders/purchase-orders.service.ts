@@ -13,6 +13,7 @@ import {
   toPaginationWindow,
 } from '../../common/utils/pagination.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
+import { AuditService } from '../audit/audit.service.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 import type { PurchaseOrderLookupQueryDto } from './dto/purchase-order-lookup-query.dto.js';
 import type { PurchaseOrderQueryDto } from './dto/purchase-order-query.dto.js';
@@ -113,6 +114,7 @@ export class PurchaseOrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly audit: AuditService,
   ) {}
 
   async list(query: PurchaseOrderQueryDto) {
@@ -521,8 +523,35 @@ export class PurchaseOrdersService {
                   ),
               },
             },
-            select: { id: true },
+            select: {
+              id: true,
+              number: true,
+              supplierId: true,
+              warehouseId: true,
+              orderDate: true,
+              expectedDate: true,
+              notes: true,
+              status: true,
+              subtotal: true,
+              currencyCode: true,
+            },
           });
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId,
+            action:
+              'purchase-order.created',
+            entityType:
+              'purchase-order',
+            entityId: item.id,
+            after: {
+              ...item,
+              lines: prepared.lines,
+            },
+          },
+        );
 
         return item.id;
       },
@@ -534,7 +563,10 @@ export class PurchaseOrdersService {
   async update(
     id: string,
     dto: PurchaseOrderUpsertDto,
+    userId: string,
   ) {
+    const before = await this.get(id);
+
     await this.prisma.$transaction(
       async (tx) => {
         await this.lockWithStatus(
@@ -577,6 +609,34 @@ export class PurchaseOrdersService {
             }),
           ),
         });
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId,
+            action:
+              'purchase-order.updated',
+            entityType:
+              'purchase-order',
+            entityId: id,
+            before,
+            after: {
+              supplierId:
+                dto.supplierId,
+              warehouseId:
+                dto.warehouseId,
+              orderDate:
+                prepared.orderDate,
+              expectedDate:
+                prepared.expectedDate,
+              notes: dto.notes ?? null,
+              subtotal:
+                prepared.subtotal,
+              status: 'draft',
+              lines: prepared.lines,
+            },
+          },
+        );
       },
     );
 
@@ -597,14 +657,35 @@ export class PurchaseOrdersService {
           id,
         );
 
+        const submittedAt = new Date();
+
         await tx.purchaseOrder.update({
           where: { id },
           data: {
             status: 'SUBMITTED',
-            submittedAt: new Date(),
+            submittedAt,
             submittedByUserId: userId,
           },
         });
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId,
+            action:
+              'purchase-order.submitted',
+            entityType:
+              'purchase-order',
+            entityId: id,
+            before: {
+              status: 'draft',
+            },
+            after: {
+              status: 'submitted',
+              submittedAt,
+            },
+          },
+        );
       },
     );
 
@@ -625,14 +706,35 @@ export class PurchaseOrdersService {
           id,
         );
 
+        const approvedAt = new Date();
+
         await tx.purchaseOrder.update({
           where: { id },
           data: {
             status: 'APPROVED',
-            approvedAt: new Date(),
+            approvedAt,
             approvedByUserId: userId,
           },
         });
+
+        await this.audit.recordInTransaction(
+          tx,
+          {
+            userId,
+            action:
+              'purchase-order.approved',
+            entityType:
+              'purchase-order',
+            entityId: id,
+            before: {
+              status: 'submitted',
+            },
+            after: {
+              status: 'approved',
+              approvedAt,
+            },
+          },
+        );
       },
     );
 
