@@ -17,6 +17,12 @@ import type { CreateRoleDto } from './dto/create-role.dto.js';
 import type { SetRolePermissionsDto } from './dto/set-role-permissions.dto.js';
 import type { UpdateRoleDto } from './dto/update-role.dto.js';
 
+export interface ManagedRoleUpsertInput {
+  readonly name: string;
+  readonly description?: string;
+  readonly permissionKeys: readonly string[];
+}
+
 @Injectable()
 export class AccessControlService {
   constructor(
@@ -314,6 +320,116 @@ export class AccessControlService {
     return { deleted: true };
   }
 
+  async listAllRoles() {
+    const roles = await this.prisma.role.findMany({
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+      include: {
+        permissions: {
+          include: { permission: true },
+        },
+        _count: {
+          select: { users: true },
+        },
+      },
+    });
+
+    return roles.map((role) => this.toRole(role));
+  }
+
+  async listAllPermissions() {
+    return this.prisma.permission.findMany({
+      orderBy: [{ key: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        key: true,
+        description: true,
+      },
+    });
+  }
+
+  async createManagedRole(
+    dto: ManagedRoleUpsertInput,
+    actorUserId: string,
+  ) {
+    const permissionIds = await this.resolvePermissionIds(
+      dto.permissionKeys,
+    );
+
+    return this.createRole(
+      {
+        name: dto.name,
+        description: dto.description,
+        permissionIds,
+      },
+      actorUserId,
+    );
+  }
+
+  async updateManagedRole(
+    id: string,
+    dto: ManagedRoleUpsertInput,
+    actorUserId: string,
+  ) {
+    const current = await this.requireMutableRole(id);
+    const before = await this.getRole(id);
+    const permissionIds = await this.resolvePermissionIds(
+      dto.permissionKeys,
+    );
+
+    if (dto.name.trim() !== current.name) {
+      await this.assertRoleNameAvailable(dto.name, id);
+    }
+
+    const role = await this.prisma.$transaction(async (tx) => {
+      await tx.role.update({
+        where: { id },
+        data: {
+          name: dto.name.trim(),
+          description: dto.description?.trim() || null,
+        },
+      });
+
+      await tx.rolePermission.deleteMany({
+        where: { roleId: id },
+      });
+
+      if (permissionIds.length > 0) {
+        await tx.rolePermission.createMany({
+          data: permissionIds.map((permissionId) => ({
+            roleId: id,
+            permissionId,
+          })),
+        });
+      }
+
+      const updated = await tx.role.findUniqueOrThrow({
+        where: { id },
+        include: {
+          permissions: {
+            include: { permission: true },
+          },
+          _count: {
+            select: { users: true },
+          },
+        },
+      });
+      const after = this.toRole(updated);
+
+      await this.audit.recordInTransaction(tx, {
+        userId: actorUserId,
+        action: 'role.updated',
+        entityType: 'role',
+        entityId: id,
+        before,
+        after,
+      });
+
+      return updated;
+    });
+
+    return this.toRole(role);
+  }
+
   async listPermissions(query: ListQueryDto) {
     const { skip, take } = toPaginationWindow(query);
     const search = query.search?.trim();
@@ -350,6 +466,38 @@ export class AccessControlService {
     ]);
 
     return toPaginatedResult(permissions, total, query);
+  }
+
+  private async resolvePermissionIds(
+    keys: readonly string[],
+  ): Promise<string[]> {
+    const uniqueKeys = [...new Set(keys)];
+
+    if (uniqueKeys.length === 0) {
+      return [];
+    }
+
+    const permissions = await this.prisma.permission.findMany({
+      where: { key: { in: uniqueKeys } },
+      select: { id: true, key: true },
+    });
+
+    if (permissions.length !== uniqueKeys.length) {
+      throw new ApiException({
+        code: 'INVALID_PERMISSIONS',
+        message: 'One or more permission keys are invalid',
+        statusCode: HttpStatus.BAD_REQUEST,
+      });
+    }
+
+    const idByKey = new Map(
+      permissions.map((permission) => [
+        permission.key,
+        permission.id,
+      ]),
+    );
+
+    return uniqueKeys.map((key) => idByKey.get(key)!);
   }
 
   private async requireMutableRole(id: string) {
