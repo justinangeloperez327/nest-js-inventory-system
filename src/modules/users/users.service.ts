@@ -241,7 +241,9 @@ export class UsersService {
     await this.requireUser(id);
     const before = await this.get(id);
 
-    if (!dto.isActive) {
+    if (dto.isActive) {
+      await this.assertCredentialsProvisioned(id);
+    } else {
       await this.ensureAdministratorContinuity(id, false);
     }
 
@@ -445,25 +447,6 @@ export class UsersService {
     active: boolean,
     actorUserId: string,
   ) {
-    if (active) {
-      const user = await this.prisma.user.findUnique({
-        where: { id },
-        select: { passwordHash: true },
-      });
-
-      if (!user) {
-        throw this.notFound();
-      }
-
-      if (user.passwordHash.startsWith(PENDING_CREDENTIAL_PREFIX)) {
-        throw new ConflictException({
-          code: 'USER_CREDENTIALS_NOT_PROVISIONED',
-          message:
-            'Credentials must be provisioned by the authentication backend before this user can be activated',
-        });
-      }
-    }
-
     return this.setStatus(
       id,
       { isActive: active },
@@ -573,6 +556,27 @@ export class UsersService {
         code: 'LAST_ADMINISTRATOR_REQUIRED',
         message:
           'The last active Administrator cannot be deactivated or have the Administrator role removed',
+      });
+    }
+  }
+
+  private async assertCredentialsProvisioned(
+    id: string,
+  ): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { passwordHash: true },
+    });
+
+    if (!user) {
+      throw this.notFound();
+    }
+
+    if (user.passwordHash.startsWith(PENDING_CREDENTIAL_PREFIX)) {
+      throw new ConflictException({
+        code: 'USER_CREDENTIALS_NOT_PROVISIONED',
+        message:
+          'Credentials must be provisioned by the authentication backend before this user can be activated',
       });
     }
   }
