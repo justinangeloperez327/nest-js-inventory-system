@@ -239,7 +239,7 @@ function mapUser(user: {
   firstName: string;
   lastName: string;
   isActive: boolean;
-  roles: readonly Array<{
+  roles: ReadonlyArray<{
     id: string;
     name: string;
   }>;
@@ -274,7 +274,7 @@ function mapRole(role: {
   description: string | null;
   isSystem: boolean;
   userCount: number;
-  permissions: readonly Array<{
+  permissions: ReadonlyArray<{
     key: string;
   }>;
   createdAt: Date;
