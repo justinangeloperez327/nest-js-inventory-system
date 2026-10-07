@@ -4,9 +4,10 @@ REST backend for the Angular Inventory System.
 
 ## Requirements
 
-- Node.js 24 LTS or newer
+- Node.js 24 LTS
 - npm 11 or newer
-- PostgreSQL 18
+- PostgreSQL 18 for local Docker/CI
+- Prisma Postgres for the current Vercel production database target
 
 ## Setup
 
@@ -26,6 +27,64 @@ The default API prefix is:
 ```
 
 The Angular application should therefore use `/api/v1` as its API base URL when the frontend and backend are connected directly.
+
+## Vercel Functions
+
+The current production target is Vercel Functions with Prisma Postgres.
+
+Vercel has native zero-configuration NestJS support. The existing `src/main.ts` entry point is intentionally retained because the same Nest application can run:
+
+```text
+Vercel
+  -> NestJS as one Vercel Function
+  -> Prisma ORM / @prisma/adapter-pg
+  -> Prisma Postgres
+
+Docker / local
+  -> normal NestJS Node process
+  -> Prisma ORM / @prisma/adapter-pg
+  -> PostgreSQL 18
+```
+
+No Vercel-specific serverless controller or duplicate application bootstrap is required.
+
+### Vercel environment
+
+Required production variables:
+
+```text
+DATABASE_URL
+JWT_ACCESS_SECRET
+JWT_REFRESH_SECRET
+JWT_ACCESS_TTL_SECONDS
+JWT_REFRESH_TTL_SECONDS
+JWT_ISSUER
+JWT_AUDIENCE
+CORS_ORIGINS
+```
+
+Recommended database configuration:
+
+```text
+DATABASE_URL = pooled Prisma Postgres connection
+DIRECT_URL   = direct Prisma Postgres connection
+```
+
+The NestJS runtime always uses `DATABASE_URL`. Prisma CLI operations such as migrations, introspection, and Studio prefer `DIRECT_URL` and fall back to `DATABASE_URL` when `DIRECT_URL` is not configured.
+
+When Prisma Postgres is connected through the Vercel Marketplace, Vercel supplies `DATABASE_URL`. Copy the direct connection string from Prisma Console into `DIRECT_URL` for production migration workflows.
+
+Do not run `prisma migrate dev` during a Vercel deployment. Production schema changes should be applied before promoting/deploying the application using:
+
+```bash
+npm run db:migrate:deploy
+```
+
+The `postinstall` hook continues to run Prisma Client generation during Vercel builds.
+
+Node.js is pinned to the Vercel-supported `24.x` runtime through `package.json`.
+
+Preview deployments should use a separate preview database rather than the production database when schema-changing branches are being tested.
 
 ## Docker
 
@@ -2763,6 +2822,8 @@ See `.env.example`.
 Important application settings include:
 
 ```text
+DATABASE_URL=<pooled runtime PostgreSQL URL>
+DIRECT_URL=<optional direct PostgreSQL URL for Prisma CLI>
 API_PREFIX=api/v1
 OPENAPI_ENABLED=true
 OPENAPI_PATH=docs
