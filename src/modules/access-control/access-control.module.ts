@@ -9,6 +9,6 @@ import { PermissionsGuard } from './guards/permissions.guard.js';
   imports: [AuthModule],
   controllers: [AccessControlController],
   providers: [AccessControlService, PermissionsGuard],
-  exports: [PermissionsGuard],
+  exports: [AccessControlService, PermissionsGuard],
 })
 export class AccessControlModule {}

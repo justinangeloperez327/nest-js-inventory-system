@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 
 import { ApiException } from '../../common/exceptions/api.exception.js';
 import {
@@ -21,6 +22,14 @@ import type { SetUserRolesDto } from './dto/set-user-roles.dto.js';
 import type { SetUserStatusDto } from './dto/set-user-status.dto.js';
 import type { UpdateUserDto } from './dto/update-user.dto.js';
 import type { UserListQueryDto } from './dto/user-list-query.dto.js';
+
+const PENDING_CREDENTIAL_PREFIX = 'credential-provisioning-required:';
+
+export interface ManagedUserUpsertInput {
+  readonly name: string;
+  readonly email: string;
+  readonly roleIds: readonly string[];
+}
 
 @Injectable()
 export class UsersService {
@@ -232,7 +241,9 @@ export class UsersService {
     await this.requireUser(id);
     const before = await this.get(id);
 
-    if (!dto.isActive) {
+    if (dto.isActive) {
+      await this.assertCredentialsProvisioned(id);
+    } else {
       await this.ensureAdministratorContinuity(id, false);
     }
 
@@ -328,6 +339,119 @@ export class UsersService {
     });
 
     return this.get(id);
+  }
+
+  async createManaged(
+    dto: ManagedUserUpsertInput,
+    actorUserId: string,
+  ) {
+    const email = dto.email.trim().toLowerCase();
+    const name = splitDisplayName(dto.name);
+
+    await this.assertEmailAvailable(email);
+    await this.assertRolesExist([...dto.roleIds]);
+
+    const user = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          email,
+          passwordHash: PENDING_CREDENTIAL_PREFIX + randomUUID(),
+          firstName: name.firstName,
+          lastName: name.lastName,
+          isActive: false,
+          roles: {
+            create: dto.roleIds.map((roleId) => ({ roleId })),
+          },
+        },
+        include: this.userInclude(),
+      });
+
+      const safe = this.toUser(created);
+
+      await this.audit.recordInTransaction(tx, {
+        userId: actorUserId,
+        action: 'user.created',
+        entityType: 'user',
+        entityId: created.id,
+        after: {
+          ...safe,
+          credentialProvisioningRequired: true,
+        },
+      });
+
+      return created;
+    });
+
+    return this.toUser(user);
+  }
+
+  async updateManaged(
+    id: string,
+    dto: ManagedUserUpsertInput,
+    actorUserId: string,
+  ) {
+    const current = await this.requireUser(id);
+    const before = await this.get(id);
+    const email = dto.email.trim().toLowerCase();
+    const name = splitDisplayName(dto.name);
+    const roleIds = [...dto.roleIds];
+
+    if (email !== current.email) {
+      await this.assertEmailAvailable(email, id);
+    }
+
+    await this.assertRolesExist(roleIds);
+    await this.ensureAdministratorContinuity(id, undefined, roleIds);
+
+    const user = await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id },
+        data: {
+          email,
+          firstName: name.firstName,
+          lastName: name.lastName,
+        },
+      });
+
+      await tx.userRole.deleteMany({ where: { userId: id } });
+      await tx.userRole.createMany({
+        data: roleIds.map((roleId) => ({
+          userId: id,
+          roleId,
+        })),
+      });
+
+      const updated = await tx.user.findUniqueOrThrow({
+        where: { id },
+        include: this.userInclude(),
+      });
+      const after = this.toUser(updated);
+
+      await this.audit.recordInTransaction(tx, {
+        userId: actorUserId,
+        action: 'user.updated',
+        entityType: 'user',
+        entityId: id,
+        before,
+        after,
+      });
+
+      return updated;
+    });
+
+    return this.toUser(user);
+  }
+
+  async setManagedStatus(
+    id: string,
+    active: boolean,
+    actorUserId: string,
+  ) {
+    return this.setStatus(
+      id,
+      { isActive: active },
+      actorUserId,
+    );
   }
 
   async resetPassword(
@@ -432,6 +556,27 @@ export class UsersService {
         code: 'LAST_ADMINISTRATOR_REQUIRED',
         message:
           'The last active Administrator cannot be deactivated or have the Administrator role removed',
+      });
+    }
+  }
+
+  private async assertCredentialsProvisioned(
+    id: string,
+  ): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { passwordHash: true },
+    });
+
+    if (!user) {
+      throw this.notFound();
+    }
+
+    if (user.passwordHash.startsWith(PENDING_CREDENTIAL_PREFIX)) {
+      throw new ConflictException({
+        code: 'USER_CREDENTIALS_NOT_PROVISIONED',
+        message:
+          'Credentials must be provisioned by the authentication backend before this user can be activated',
       });
     }
   }
@@ -563,4 +708,27 @@ export class UsersService {
       message: 'User was not found',
     });
   }
+}
+
+
+function splitDisplayName(value: string): {
+  firstName: string;
+  lastName: string;
+} {
+  const normalized = value.trim().replace(/\s+/g, ' ');
+
+  if (!normalized) {
+    throw new ApiException({
+      code: 'INVALID_USER_NAME',
+      message: 'User name is required',
+      statusCode: HttpStatus.BAD_REQUEST,
+    });
+  }
+
+  const [firstName, ...rest] = normalized.split(' ');
+
+  return {
+    firstName,
+    lastName: rest.join(' '),
+  };
 }

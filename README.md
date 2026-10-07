@@ -232,7 +232,9 @@ sales.create
 
 reports.view
 user.manage
+role.manage
 settings.manage
+audit.view
 ```
 
 After updating an existing seeded database to this version, run:
@@ -2456,6 +2458,64 @@ The Group 21 migration adds:
 - a trigger rejecting every `UPDATE` and `DELETE` against `audit_logs`
 
 Corrections are represented by new business actions; historical audit records are never rewritten.
+
+## Angular administration compatibility
+
+The backend exposes an Angular-facing administration facade in addition to the lower-level user, role, permission, and audit APIs.
+
+Endpoints:
+
+```text
+GET   /api/v1/administration/users
+GET   /api/v1/administration/users/form-options
+GET   /api/v1/administration/users/:id
+POST  /api/v1/administration/users
+PUT   /api/v1/administration/users/:id
+PATCH /api/v1/administration/users/:id/status
+
+GET   /api/v1/administration/roles
+GET   /api/v1/administration/roles/form-options
+GET   /api/v1/administration/roles/:id
+POST  /api/v1/administration/roles
+PUT   /api/v1/administration/roles/:id
+
+GET   /api/v1/administration/audit-log
+GET   /api/v1/administration/audit-log/options
+```
+
+The facade maps Angular's stable administration contract onto the existing backend domain services. The lower-level `/users`, `/roles`, `/permissions`, and `/audit-logs` endpoints remain available.
+
+### User credential boundary
+
+Angular user creation does not accept, generate, persist, or return a password.
+
+A user created through `POST /api/v1/administration/users` is created inactive with a backend-only credential-provisioning marker. Activation is rejected with `USER_CREDENTIALS_NOT_PROVISIONED` until an approved backend/identity workflow replaces that marker with a real credential.
+
+The existing backend password-reset/provisioning endpoint remains outside the Angular user form. This preserves the browser credential boundary while keeping account lifecycle enforcement server-side.
+
+### Administration permissions
+
+The canonical permission split matches Angular:
+
+```text
+user.manage
+role.manage
+settings.manage
+audit.view
+```
+
+Run `npm run db:seed` after deploying this change to synchronize the new `role.manage` and `audit.view` permission records and Administrator role assignments in an existing database.
+
+### Query mapping
+
+The facade translates Angular query names without changing the underlying domain services:
+
+```text
+users: name       -> firstName
+users: active     -> isActive
+audit: occurredAt -> createdAt
+audit: area       -> entityType
+```
 
 ## Application settings
 

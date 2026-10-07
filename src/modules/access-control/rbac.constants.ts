@@ -5,12 +5,12 @@ export const Permission = {
   UsersDeactivate: 'user.manage',
   UsersAssignRoles: 'user.manage',
 
-  RolesRead: 'user.manage',
-  RolesCreate: 'user.manage',
-  RolesUpdate: 'user.manage',
-  RolesDelete: 'user.manage',
-  RolesAssignPermissions: 'user.manage',
-  PermissionsRead: 'user.manage',
+  RolesRead: 'role.manage',
+  RolesCreate: 'role.manage',
+  RolesUpdate: 'role.manage',
+  RolesDelete: 'role.manage',
+  RolesAssignPermissions: 'role.manage',
+  PermissionsRead: 'role.manage',
 
   DashboardView: 'dashboard.view',
 
@@ -51,7 +51,7 @@ export const Permission = {
   SalesReturn: 'sales.return',
 
   ReportsView: 'reports.view',
-  AuditRead: 'user.manage',
+  AuditRead: 'audit.view',
   SettingsManage: 'settings.manage',
 } as const;
 
@@ -164,7 +164,15 @@ export const PERMISSION_DEFINITIONS: ReadonlyArray<{
   },
   {
     key: Permission.UsersRead,
-    description: 'Manage users, roles, permissions, and audit access',
+    description: 'Manage users',
+  },
+  {
+    key: Permission.RolesRead,
+    description: 'Manage roles and permissions',
+  },
+  {
+    key: Permission.AuditRead,
+    description: 'View audit history',
   },
   {
     key: Permission.SettingsManage,
