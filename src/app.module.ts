@@ -9,6 +9,7 @@ import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
 import { GoodsReceiptsModule } from './modules/goods-receipts/goods-receipts.module.js';
 import { AccessControlModule } from './modules/access-control/access-control.module.js';
+import { AdministrationModule } from './modules/administration/administration.module.js';
 import { AuditApiModule } from './modules/audit/audit-api.module.js';
 import { AuditModule } from './modules/audit/audit.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
@@ -46,6 +47,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module.js';
     AuditModule,
     AuthModule,
     AccessControlModule,
+    AdministrationModule,
     AuditApiModule,
     SettingsModule,
     UsersModule,
