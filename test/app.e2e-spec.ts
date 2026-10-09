@@ -1,9 +1,11 @@
 import {
   BadRequestException,
   INestApplication,
+  RequestMethod,
   ValidationPipe,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import type { ValidationError } from 'class-validator';
 import {
   afterAll,
@@ -21,6 +23,7 @@ import { requestContextMiddleware } from '../src/common/middleware/request-conte
 import { validationErrorsToFields } from '../src/common/utils/validation-errors.util.js';
 import { PrismaService } from '../src/database/prisma.service.js';
 import { HealthController } from '../src/health/health.controller.js';
+import { HomeController } from '../src/home/home.controller.js';
 import { AuthController } from '../src/modules/auth/auth.controller.js';
 import { AuthService } from '../src/modules/auth/auth.service.js';
 import { AccessTokenGuard } from '../src/modules/auth/guards/access-token.guard.js';
@@ -42,8 +45,21 @@ describe('API HTTP contract (e2e)', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      controllers: [HealthController, AuthController],
+      controllers: [HomeController, HealthController, AuthController],
       providers: [
+        {
+          provide: ConfigService,
+          useValue: {
+            get: (key: string) =>
+              ({
+                'app.name': 'NestJS Inventory System Test',
+                'app.apiPrefix': 'api/v1',
+                'app.openApiEnabled': true,
+                'app.openApiPath': 'docs',
+                'app.openApiVersion': '1.0.0',
+              })[key],
+          },
+        },
         {
           provide: PrismaService,
           useValue: prisma,
@@ -60,7 +76,9 @@ describe('API HTTP contract (e2e)', () => {
 
     app = moduleRef.createNestApplication();
     app.use(requestContextMiddleware);
-    app.setGlobalPrefix('api/v1');
+    app.setGlobalPrefix('api/v1', {
+      exclude: [{ path: '', method: RequestMethod.GET }],
+    });
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
@@ -88,6 +106,17 @@ describe('API HTTP contract (e2e)', () => {
 
   afterAll(async () => {
     await app?.close();
+  });
+
+  it('serves the API documentation landing page at the application root', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/')
+      .expect(200);
+
+    expect(response.headers['content-type']).toContain('text/html');
+    expect(response.text).toContain('NestJS Inventory System Test');
+    expect(response.text).toContain('/api/v1/docs');
+    expect(response.text).toContain('/api/v1/health/ready');
   });
 
   it('serves liveness and preserves a caller-supplied request ID', async () => {

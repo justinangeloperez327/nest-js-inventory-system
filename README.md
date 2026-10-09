@@ -148,6 +148,32 @@ docker build --target runtime -t nest-js-inventory-system .
 
 When the image is deployed without Compose, run the Prisma migrations separately before starting the API container. The Compose stack handles this automatically through its dedicated `migrate` service.
 
+## API landing page
+
+Opening the backend root URL in a browser serves a lightweight API documentation portal:
+
+```text
+GET /
+```
+
+The landing page summarizes authentication, public health endpoints, major API areas, the configured API prefix, and links to the interactive Swagger/OpenAPI documentation.
+
+The application API remains under:
+
+```text
+/api/v1
+```
+
+Detailed API documentation remains available at:
+
+```text
+/api/v1/docs
+/api/v1/docs/openapi.json
+/api/v1/docs/openapi.yaml
+```
+
+The landing page is intentionally outside the global API prefix and excluded from the generated OpenAPI specification.
+
 ## Angular API contract
 
 Successful resource endpoints return the resource body directly.

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Logger,
+  RequestMethod,
   ValidationPipe,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -35,7 +36,9 @@ async function bootstrap(): Promise<void> {
     config.get<string>('app.openApiVersion') ?? '1.0.0';
 
   app.use(requestContextMiddleware);
-  app.setGlobalPrefix(apiPrefix);
+  app.setGlobalPrefix(apiPrefix, {
+    exclude: [{ path: '', method: RequestMethod.GET }],
+  });
   app.enableCors({
     origin: corsOrigins,
     credentials: true,

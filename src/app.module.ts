@@ -7,6 +7,7 @@ import databaseConfig from './config/database.config.js';
 import { validateEnvironment } from './config/environment.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
+import { HomeController } from './home/home.controller.js';
 import { GoodsReceiptsModule } from './modules/goods-receipts/goods-receipts.module.js';
 import { AccessControlModule } from './modules/access-control/access-control.module.js';
 import { AdministrationModule } from './modules/administration/administration.module.js';
@@ -32,6 +33,7 @@ import { UsersModule } from './modules/users/users.module.js';
 import { WarehousesModule } from './modules/warehouses/warehouses.module.js';
 
 @Module({
+  controllers: [HomeController],
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
